@@ -4,6 +4,21 @@
 
 ---
 
+## [Version 2026.9.2] — 11 September 2026 (September Release #2)
+
+### 🚀 Highlights & Problem Fixes
+1. **10-Minute Inactive Timer Screen Alert Popup**:
+   - **Feature**: If an employee's work timer is OFF or NOT RUNNING (stopped or paused), an on-screen alert modal (`TimerIdleReminder.jsx`) appears over the entire application after 10 minutes of inactivity.
+   - **Behavior**:
+     - The modal remains visible until the user starts the timer or chooses to dismiss/close it.
+     - Includes a prominent "Start Timer Now" button that instantly switches to the timer dashboard and highlights the Start/Resume button.
+     - If dismissed ("Remind me in 10 minutes" or close button "✕"), the popup dismisses cleanly and triggers again after another 10 minutes if the timer is still not running.
+     - If the user starts the timer, the popup immediately disappears and will NOT appear while the timer is running. Only when the timer is stopped or paused does the 10-minute idle cycle re-engage.
+     - Emits a gentle two-tone chime and calls Electron IPC `timer:alertReminder` to restore/focus the desktop application and flash the Windows taskbar icon if minimized or hidden.
+     - Fully isolated; zero impact on existing timer tracking, offline sync, or manual time requests.
+
+---
+
 ## [Version 2026.9.1] — 11 September 2026 (September Release #1)
 
 ### 🚀 Highlights & Problem Fixes

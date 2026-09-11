@@ -13,6 +13,7 @@ import MyTasks from "./MyTasks.jsx";
 import ManualRemarksPage from "./ManualRemarksPage.jsx";
 import UserCalendar from "./UserCalendar.jsx";
 import BirthdayBanner from "./Worktimer/BirthdayBanner.jsx";
+import TimerIdleReminder from "./TimerIdleReminder.jsx";
 import logoImg from "../../assets/logo.png";
 
 const TABS = [
@@ -205,6 +206,12 @@ export default function Employee({ auth, onLogout }) {
 
       {/* FLOATING BIRTHDAY CELEBRATION CARD */}
       <BirthdayBanner todayBirthdays={todayBirthdays} />
+
+      {/* ⏱️ 10-MINUTE TIMER INACTIVITY ALERT MODAL OVER ENTIRE APP */}
+      <TimerIdleReminder
+        auth={auth}
+        onStartTimer={() => setTab("timer")}
+      />
     </div>
   );
 }

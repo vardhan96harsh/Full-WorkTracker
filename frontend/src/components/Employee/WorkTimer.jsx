@@ -622,13 +622,41 @@ async function loadMaster() {
     return () => typeof off === "function" && off();
   }, []);
 
-  // ⏱️ Synchronize timer running state with Electron for overlay visibility
+  // ⏱️ Synchronize timer running state with Electron and idle alert
   useEffect(() => {
     const isRunning = Boolean(
       activeSession && (activeSession.status === "active" || activeSession.status === "paused")
     );
     window.worktracker?.setTimerRunning?.(isRunning);
+
+    // Actively running (ticking) vs stopped/paused
+    const isTimerActive = Boolean(activeSession && activeSession.status === "active");
+    window.dispatchEvent(
+      new CustomEvent("timer:statusChanged", {
+        detail: {
+          isRunning: isTimerActive,
+          status: activeSession?.status || "stopped",
+        },
+      })
+    );
   }, [activeSession]);
+
+  // 🎯 Highlight and focus start button when reminder "Start Timer Now" is clicked
+  useEffect(() => {
+    const handleFocusStart = () => {
+      const btn = document.getElementById("work-timer-start-btn");
+      if (btn) {
+        btn.scrollIntoView({ behavior: "smooth", block: "center" });
+        btn.focus();
+        btn.classList.add("ring-4", "ring-emerald-400", "scale-105");
+        setTimeout(() => {
+          btn.classList.remove("ring-4", "ring-emerald-400", "scale-105");
+        }, 1800);
+      }
+    };
+    window.addEventListener("timer:focusStart", handleFocusStart);
+    return () => window.removeEventListener("timer:focusStart", handleFocusStart);
+  }, []);
 
   // 🔥 LOAD SESSIONS WHEN DATE RANGE CHANGES
   useEffect(() => {
@@ -1512,6 +1540,7 @@ async function loadMaster() {
                   </button>
                 ) : hasPaused ? (
                   <button
+                    id="work-timer-start-btn"
                     onClick={resume}
                     className="group inline-flex items-center justify-center gap-3 rounded-full border-2 border-green-600 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 hover:shadow-[0_8px_24px_rgba(22,163,74,0.22)] active:scale-[0.98]"
                   >
@@ -1527,6 +1556,7 @@ async function loadMaster() {
                   </button>
                 ) : (
                   <button
+                    id="work-timer-start-btn"
                     onClick={start}
                     disabled={
                       (mode === "project" && (!projectId || !workType)) ||

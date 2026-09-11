@@ -30,6 +30,16 @@ export default function OverlayWidget() {
       activeSession && (activeSession.status === "active" || activeSession.status === "paused")
     );
     window.worktracker?.setTimerRunning?.(isRunning);
+
+    const isTimerActive = Boolean(activeSession && activeSession.status === "active");
+    window.dispatchEvent(
+      new CustomEvent("timer:statusChanged", {
+        detail: {
+          isRunning: isTimerActive,
+          status: activeSession?.status || "stopped",
+        },
+      })
+    );
   }, [activeSession]);
 
   useEffect(() => {
