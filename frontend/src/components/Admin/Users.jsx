@@ -20,6 +20,7 @@ import {
   Key,
 } from "lucide-react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 
 const DESIGNATIONS = [
   "Instructional Designer",
@@ -87,6 +88,10 @@ export default function Users({ auth }) {
   const [showEditPwd, setShowEditPwd] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editErrorMsg, setEditErrorMsg] = useState("");
+
+  // In-app non-blocking confirmation modal
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Filters
   const [q, setQ] = useState("");
@@ -175,32 +180,34 @@ export default function Users({ auth }) {
   }
 
   /* ---------- delete user ---------- */
-  async function del(user) {
-    const id = user._id || user.id;
+  function del(user) {
     if (user.role === "admin") {
-      alert("Admin accounts cannot be deleted.");
+      setErrorMsg("Admin accounts cannot be deleted.");
       return;
     }
+    setDeleteTarget(user);
+  }
 
-    if (!confirm(`Are you sure you want to delete user "${user.name}"? This action cannot be undone.`)) {
-      return;
-    }
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget._id || deleteTarget.id;
 
-    setLoading(true);
+    setDeleting(true);
     setErrorMsg("");
     try {
       await api(`/api/users/${id}`, {
         method: "DELETE",
         token: auth.token,
       });
-      setSuccessMsg(`User "${user.name}" deleted.`);
+      setSuccessMsg(`User "${deleteTarget.name}" deleted.`);
       setTimeout(() => setSuccessMsg(""), 4000);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       console.error("Failed to delete user:", err);
       setErrorMsg(err?.message || "Failed to delete user.");
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   }
 
@@ -1058,6 +1065,19 @@ export default function Users({ auth }) {
           </div>
         </div>
       )}
+
+      {/* In-app non-blocking confirmation dialog */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete User Account"
+        message={`Are you sure you want to delete user "${deleteTarget?.name}"?\n\nThis action cannot be undone.`}
+        confirmText="Delete User"
+        cancelText="Cancel"
+        isDanger={true}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

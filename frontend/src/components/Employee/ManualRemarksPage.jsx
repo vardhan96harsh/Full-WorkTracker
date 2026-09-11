@@ -17,6 +17,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { api } from "../../api.js";
+import ConfirmModal from "../ConfirmModal.jsx";
 
 const WORK_TYPES = [
   "Alpha",
@@ -50,9 +51,11 @@ export default function ManualRemarksPage({ auth }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, title: "", message: "", onConfirm: null });
 
   // Form states
   const [text, setText] = useState("");
+  const [customTaskName, setCustomTaskName] = useState("");
   const [requestedMinutes, setRequestedMinutes] = useState("");
   const [date, setDate] = useState(getLocalDateStr());
   const [taskType, setTaskType] = useState("Alpha");
@@ -141,7 +144,11 @@ export default function ManualRemarksPage({ auth }) {
 
   async function add(e) {
     if (e) e.preventDefault();
-    if (!text.trim()) {
+    if (mode === "general" && !customTaskName.trim() && !text.trim()) {
+      setErrorMsg("Please provide a task name or description.");
+      return;
+    }
+    if (mode === "project" && !text.trim()) {
       setErrorMsg("Please provide a description/task remark.");
       return;
     }
@@ -160,8 +167,9 @@ export default function ManualRemarksPage({ auth }) {
     setErrorMsg("");
     setSuccessMsg("");
 
+    const taskRemark = text.trim() || customTaskName.trim();
     const body = {
-      text: text.trim(),
+      text: taskRemark,
       requestedMinutes: mins,
       date: date || getLocalDateStr(),
       taskType: taskType || "Alpha",
@@ -169,8 +177,9 @@ export default function ManualRemarksPage({ auth }) {
 
     if (mode === "project") {
       body.project = projectId;
+      body.projectId = projectId;
     } else {
-      body.customTask = text.trim();
+      body.customTask = customTaskName.trim() || text.trim();
     }
 
     try {
@@ -182,6 +191,7 @@ export default function ManualRemarksPage({ auth }) {
 
       setRemarks([res, ...remarks]);
       setText("");
+      setCustomTaskName("");
       setRequestedMinutes("");
       setProjectId("");
       setSuccessMsg("Manual time request submitted successfully and is awaiting review.");
@@ -199,6 +209,7 @@ export default function ManualRemarksPage({ auth }) {
   function startEdit(r) {
     setEditId(r._id);
     setText(r.text || "");
+    setCustomTaskName(r.customTask || "");
     setRequestedMinutes(r.requestedMinutes || "");
     setDate(r.date ? r.date.slice(0, 10) : getLocalDateStr());
     setTaskType(r.taskType || "Alpha");
@@ -214,6 +225,7 @@ export default function ManualRemarksPage({ auth }) {
   function cancelEdit() {
     setEditId(null);
     setText("");
+    setCustomTaskName("");
     setRequestedMinutes("");
     setDate(getLocalDateStr());
     setTaskType("Alpha");
@@ -224,7 +236,11 @@ export default function ManualRemarksPage({ auth }) {
 
   async function update(e) {
     if (e) e.preventDefault();
-    if (!text.trim()) {
+    if (mode === "general" && !customTaskName.trim() && !text.trim()) {
+      setErrorMsg("Please provide a task name or description.");
+      return;
+    }
+    if (mode === "project" && !text.trim()) {
       setErrorMsg("Please provide a description/task remark.");
       return;
     }
@@ -238,16 +254,29 @@ export default function ManualRemarksPage({ auth }) {
     setErrorMsg("");
     setSuccessMsg("");
 
+    const taskRemark = text.trim() || customTaskName.trim();
+    const body = {
+      text: taskRemark,
+      requestedMinutes: mins,
+      taskType,
+      date,
+    };
+
+    if (mode === "project") {
+      body.project = projectId || null;
+      body.projectId = projectId || null;
+      body.customTask = null;
+    } else {
+      body.project = null;
+      body.projectId = null;
+      body.customTask = customTaskName.trim() || text.trim();
+    }
+
     try {
       const res = await api(`/api/manual-remarks/${editId}`, {
         method: "PUT",
         token: auth.token,
-        body: {
-          text: text.trim(),
-          requestedMinutes: mins,
-          taskType,
-          date,
-        },
+        body,
       });
 
       setRemarks(remarks.map((r) => (r._id === editId ? res : r)));
@@ -264,28 +293,31 @@ export default function ManualRemarksPage({ auth }) {
 
   /* ================= DELETE ================= */
 
-  async function remove(r) {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete this manual request (${r.requestedMinutes} min)?\n\nThis action cannot be undone.`
-    );
-    if (!confirmDelete) return;
-
-    setLoading(true);
-    setErrorMsg("");
-    try {
-      await api(`/api/manual-remarks/${r._id}`, {
-        method: "DELETE",
-        token: auth.token,
-      });
-      setRemarks(remarks.filter((item) => item._id !== r._id));
-      setSuccessMsg("Manual time request deleted.");
-      setTimeout(() => setSuccessMsg(""), 4000);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg(err?.message || "Failed to delete request.");
-    } finally {
-      setLoading(false);
-    }
+  function remove(r) {
+    setDeleteConfirm({
+      open: true,
+      title: "Delete Manual Time Request",
+      message: `Are you sure you want to delete this manual request (${r.requestedMinutes} min)?\n\nThis action cannot be undone.`,
+      onConfirm: async () => {
+        setLoading(true);
+        setErrorMsg("");
+        try {
+          await api(`/api/manual-remarks/${r._id}`, {
+            method: "DELETE",
+            token: auth.token,
+          });
+          setRemarks(remarks.filter((item) => item._id !== r._id));
+          if (editId === r._id) cancelEdit();
+          setSuccessMsg("Manual time request deleted.");
+          setTimeout(() => setSuccessMsg(""), 4000);
+        } catch (err) {
+          console.error(err);
+          setErrorMsg(err?.message || "Failed to delete request.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   }
 
   // Summary Metrics
@@ -454,6 +486,22 @@ export default function ManualRemarksPage({ auth }) {
               </button>
             ))}
           </div>
+
+          {/* General Mode Task Name */}
+          {mode === "general" && (
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                Task / Activity Name *
+              </label>
+              <input
+                type="text"
+                value={customTaskName}
+                onChange={(e) => setCustomTaskName(e.target.value)}
+                placeholder="e.g. Client Discussion, Team Meeting, Asset Creation, Research..."
+                className="h-11 w-full rounded-2xl border border-purple-200 bg-purple-50/20 px-3.5 text-sm font-bold text-slate-900 outline-none transition focus:border-purple-500 focus:bg-white"
+              />
+            </div>
+          )}
 
           {/* Project Mode Dropdowns */}
           {mode === "project" && (
@@ -696,17 +744,23 @@ export default function ManualRemarksPage({ auth }) {
 
                     {/* Project / Task */}
                     <td className="px-5 py-4">
-                      {r.project ? (
+                      {r.project || (r.projectName && !r.customTask) ? (
                         <div className="flex items-center gap-1.5">
-                          <FolderKanban className="h-4 w-4 text-blue-600" />
+                          <FolderKanban className="h-4 w-4 text-blue-600 shrink-0" />
                           <span className="font-bold text-blue-700">
-                            {r.project.name || r.project}
+                            {r.project?.name || r.projectName || (typeof r.project === "string" ? r.project : "Project Task")}
                           </span>
                         </div>
                       ) : (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                          General Task
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Briefcase className="h-4 w-4 text-purple-600 shrink-0" />
+                          <span className="font-bold text-slate-900">
+                            {r.customTask || r.projectName || r.text || "General Task"}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700">
+                            General
+                          </span>
+                        </div>
                       )}
                     </td>
 
@@ -789,6 +843,19 @@ export default function ManualRemarksPage({ auth }) {
           </table>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.open}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+        onConfirm={() => {
+          const fn = deleteConfirm.onConfirm;
+          setDeleteConfirm(prev => ({ ...prev, open: false }));
+          if (fn) fn();
+        }}
+        onClose={() => setDeleteConfirm(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

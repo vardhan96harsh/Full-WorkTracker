@@ -15,6 +15,7 @@ import {
   Clock,
 } from "lucide-react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 
 export default function Projects({ auth }) {
   const [companies, setCompanies] = useState([]);
@@ -43,6 +44,10 @@ export default function Projects({ auth }) {
   const [editCompany, setEditCompany] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  // In-app non-blocking confirmation modal
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -116,7 +121,20 @@ export default function Projects({ auth }) {
 
   async function add(e) {
     if (e) e.preventDefault();
-    if (!canAdd) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setErrorMsg("Please enter a project name.");
+      return;
+    }
+    if (!company) {
+      setErrorMsg("Please select a company for this project.");
+      return;
+    }
+    if (!category) {
+      setErrorMsg("Please select a category for this project.");
+      return;
+    }
+    if (loading) return;
 
     setLoading(true);
     setErrorMsg("");
@@ -127,7 +145,7 @@ export default function Projects({ auth }) {
         method: "POST",
         token: auth.token,
         body: {
-          name: name.trim(),
+          name: trimmed,
           code: code.trim(),
           status,
           company,
@@ -167,16 +185,22 @@ export default function Projects({ auth }) {
     }
   }
 
-  async function del(it) {
-    const id = typeof it === "object" ? it._id : it;
-    const projectName = typeof it === "object" ? it.name : "this project";
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${projectName}"?\n\nWarning: Tasks and logged hours associated with this project may be affected.`
-    );
-    if (!confirmDelete) return;
+  function del(it) {
+    setDeleteTarget(it);
+  }
 
-    setLoading(true);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = typeof deleteTarget === "object" ? deleteTarget._id : deleteTarget;
+    const projectName = typeof deleteTarget === "object" ? deleteTarget.name : "this project";
+
+    setDeleting(true);
     setErrorMsg("");
+
+    if (editingId === id) {
+      cancelEdit();
+    }
+
     try {
       await api(`/api/projects/${id}`, {
         method: "DELETE",
@@ -186,11 +210,12 @@ export default function Projects({ auth }) {
       setItems((prev) => prev.filter((item) => item._id !== id));
       setSuccessMsg(`Project "${projectName}" deleted.`);
       setTimeout(() => setSuccessMsg(""), 4000);
+      setDeleteTarget(null);
     } catch (e) {
       console.error(e);
       setErrorMsg(e?.message || "Failed to delete project.");
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   }
 
@@ -221,7 +246,19 @@ export default function Projects({ auth }) {
   }
 
   async function saveEdit(id) {
-    if (!editName.trim() || !editCompany || !editCategory) return;
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      setErrorMsg("Project name cannot be empty.");
+      return;
+    }
+    if (!editCompany) {
+      setErrorMsg("Please select a company for this project.");
+      return;
+    }
+    if (!editCategory) {
+      setErrorMsg("Please select a category for this project.");
+      return;
+    }
 
     setLoading(true);
     setErrorMsg("");
@@ -230,7 +267,7 @@ export default function Projects({ auth }) {
         method: "PUT",
         token: auth.token,
         body: {
-          name: editName.trim(),
+          name: trimmed,
           code: editCode.trim(),
           status: editStatus,
           company: editCompany,
@@ -245,7 +282,7 @@ export default function Projects({ auth }) {
             ? {
                 ...it,
                 ...updated,
-                name: updated.name || editName.trim(),
+                name: updated.name || trimmed,
                 code:
                   updated.code !== undefined ? updated.code : editCode.trim(),
                 status: updated.status || editStatus,
@@ -508,8 +545,8 @@ export default function Projects({ auth }) {
           <div className="mt-4 flex justify-end">
             <button
               type="submit"
-              disabled={!canAdd}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-blue-600 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={loading}
+              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-blue-600 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>Add Project</span>
@@ -847,6 +884,21 @@ export default function Projects({ auth }) {
           </table>
         </div>
       </div>
+
+      {/* In-app non-blocking confirmation dialog */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Project"
+        message={`Are you sure you want to delete "${
+          typeof deleteTarget === "object" ? deleteTarget?.name : "this project"
+        }"?\n\nWarning: Tasks and logged hours associated with this project may be affected.`}
+        confirmText="Delete Project"
+        cancelText="Cancel"
+        isDanger={true}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

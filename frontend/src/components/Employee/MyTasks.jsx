@@ -108,7 +108,8 @@ export default function MyTasks({ auth, onStartTaskTimer }) {
       );
       window.dispatchEvent(new Event("taskCount:refresh"));
     } catch (e) {
-      alert(e.message || "Could not update status.");
+      setError(e.message || "Could not update status.");
+      setTimeout(() => setError(""), 5000);
     }
   }
 

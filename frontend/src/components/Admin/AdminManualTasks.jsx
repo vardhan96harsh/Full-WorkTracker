@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api } from "../../api.js";
 import DateRangePicker from "../DateRangePicker.jsx";
+import ConfirmModal from "./ConfirmModal.jsx";
 
 function formatMinutes(minutes) {
   const m = Number(minutes) || 0;
@@ -48,6 +49,7 @@ export default function AdminManualTasks({ auth }) {
   const [editingId, setEditingId] = useState(null);
   const [editMinutes, setEditMinutes] = useState("");
   const [savingMinutes, setSavingMinutes] = useState(false);
+  const [confirmState, setConfirmState] = useState({ open: false, title: "", message: "", confirmLabel: "Confirm", danger: false, onConfirm: null });
 
   /* =========================
      LOAD USERS
@@ -138,62 +140,70 @@ export default function AdminManualTasks({ auth }) {
   /* =========================
      APPROVE / REJECT
      ========================= */
-  async function approve(e, remark) {
+  function approve(e, remark) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
-    const confirmed = window.confirm(
-      `Approve manual time request for ${remark.userName}?\n\nTask: ${remark.projectName || remark.customTask || "Manual task"}\nTime: ${formatMinutes(remark.requestedMinutes)} (${remark.requestedMinutes} min)`
-    );
-    if (!confirmed) return;
+    setConfirmState({
+      open: true,
+      title: "Approve Manual Time Request",
+      message: `Approve manual time request for ${remark.userName}?\n\nTask: ${remark.projectName || remark.customTask || "Manual task"}\nTime: ${formatMinutes(remark.requestedMinutes)} (${remark.requestedMinutes} min)`,
+      confirmLabel: "Approve Request",
+      danger: false,
+      onConfirm: async () => {
+        setLoading(true);
+        setError("");
+        try {
+          await api(`/api/manual-remarks/${remark._id}/approve`, {
+            method: "POST",
+            token: auth.token,
+          });
 
-    setLoading(true);
-    setError("");
-    try {
-      await api(`/api/manual-remarks/${remark._id}/approve`, {
-        method: "POST",
-        token: auth.token,
-      });
-
-      setSuccessMsg(`Request for ${remark.userName} approved successfully.`);
-      setTimeout(() => setSuccessMsg(""), 4000);
-      await load();
-      window.dispatchEvent(new Event("manualRemarks:refresh"));
-    } catch (err) {
-      console.error(err);
-      setError(err?.message || "Failed to approve request.");
-    } finally {
-      setLoading(false);
-    }
+          setSuccessMsg(`Request for ${remark.userName} approved successfully.`);
+          setTimeout(() => setSuccessMsg(""), 4000);
+          await load();
+          window.dispatchEvent(new Event("manualRemarks:refresh"));
+        } catch (err) {
+          console.error(err);
+          setError(err?.message || "Failed to approve request.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   }
 
-  async function reject(e, remark) {
+  function reject(e, remark) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
-    const confirmed = window.confirm(
-      `Reject manual time request for ${remark.userName}?\n\nThis will lock the request as rejected.`
-    );
-    if (!confirmed) return;
+    setConfirmState({
+      open: true,
+      title: "Reject Manual Time Request",
+      message: `Reject manual time request for ${remark.userName}?\n\nThis will lock the request as rejected.`,
+      confirmLabel: "Reject Request",
+      danger: true,
+      onConfirm: async () => {
+        setLoading(true);
+        setError("");
+        try {
+          await api(`/api/manual-remarks/${remark._id}/reject`, {
+            method: "POST",
+            token: auth.token,
+          });
 
-    setLoading(true);
-    setError("");
-    try {
-      await api(`/api/manual-remarks/${remark._id}/reject`, {
-        method: "POST",
-        token: auth.token,
-      });
-
-      setSuccessMsg(`Request for ${remark.userName} rejected.`);
-      setTimeout(() => setSuccessMsg(""), 4000);
-      await load();
-      window.dispatchEvent(new Event("manualRemarks:refresh"));
-    } catch (err) {
-      console.error(err);
-      setError(err?.message || "Failed to reject request.");
-    } finally {
-      setLoading(false);
-    }
+          setSuccessMsg(`Request for ${remark.userName} rejected.`);
+          setTimeout(() => setSuccessMsg(""), 4000);
+          await load();
+          window.dispatchEvent(new Event("manualRemarks:refresh"));
+        } catch (err) {
+          console.error(err);
+          setError(err?.message || "Failed to reject request.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   }
 
   // Summary statistics
@@ -497,9 +507,18 @@ export default function AdminManualTasks({ auth }) {
                       </div>
                     </td>
 
-                    {/* Project */}
-                    <td className="px-5 py-4 font-semibold text-blue-700">
-                      {r.projectName || (r.customTask ? "(Custom Task)" : "—")}
+                    {/* Project / Task */}
+                    <td className="px-5 py-4">
+                      {r.projectId || (r.projectName && !r.customTask) ? (
+                        <span className="font-semibold text-blue-700">{r.projectName || "Project Task"}</span>
+                      ) : r.customTask || r.projectName ? (
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-900">{r.customTask || r.projectName}</span>
+                          <span className="text-[11px] font-semibold text-purple-600">(General Task)</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
 
                     {/* Work Type */}
@@ -530,7 +549,6 @@ export default function AdminManualTasks({ auth }) {
                               if (e.key === "Escape") setEditingId(null);
                             }}
                             className="h-8 w-20 rounded-xl border border-blue-500 bg-white px-2.5 text-xs font-semibold text-slate-900 outline-none ring-2 ring-blue-500/20"
-                            autoFocus
                           />
                           <span className="text-xs text-slate-400">min</span>
                         </div>
@@ -644,6 +662,21 @@ export default function AdminManualTasks({ auth }) {
           </table>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        danger={confirmState.danger}
+        onConfirm={() => {
+          const fn = confirmState.onConfirm;
+          setConfirmState(prev => ({ ...prev, open: false }));
+          if (fn) fn();
+        }}
+        onClose={() => setConfirmState(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

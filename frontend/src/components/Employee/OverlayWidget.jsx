@@ -162,7 +162,8 @@ export default function OverlayWidget() {
   async function doStart() {
     const lastProjectId = localStorage.getItem("lastProjectId");
     if (!lastProjectId) {
-      alert("Open main app once and choose a project before starting.");
+      setError("Choose project in main app first");
+      setTimeout(() => setError(""), 4000);
       return;
     }
     try {

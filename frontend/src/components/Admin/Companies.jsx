@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 
 function getInitials(name) {
   if (!name) return "CO";
@@ -30,6 +31,10 @@ export default function Companies({ auth }) {
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // In-app non-blocking confirmation modal
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   /* ================= LOAD ================= */
   async function load() {
@@ -142,28 +147,37 @@ export default function Companies({ auth }) {
   }
 
   /* ================= DELETE ================= */
-  async function del(company) {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${company.name}"?\n\nWarning: Any projects associated with this company may be affected.`
-    );
-    if (!confirmDelete) return;
+  function del(company) {
+    setDeleteTarget(company);
+  }
 
-    setLoading(true);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
     setErrorMsg("");
+
+    // If currently editing this company, reset edit state
+    if (editId === deleteTarget._id) {
+      setEditId(null);
+      setEditName("");
+    }
+
     try {
-      await api(`/api/companies/${company._id}`, {
+      await api(`/api/companies/${deleteTarget._id}`, {
         method: "DELETE",
         token: auth.token,
       });
 
-      setItems((prev) => prev.filter((it) => it._id !== company._id));
-      setSuccessMsg(`Company "${company.name}" deleted.`);
+      setItems((prev) => prev.filter((it) => it._id !== deleteTarget._id));
+      setSuccessMsg(`Company "${deleteTarget.name}" deleted.`);
       setTimeout(() => setSuccessMsg(""), 4000);
+      setDeleteTarget(null);
     } catch (e) {
       console.error(e);
       setErrorMsg(e?.message || "Failed to delete company.");
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   }
 
@@ -363,7 +377,6 @@ export default function Companies({ auth }) {
                               }
                             }}
                             className="h-9 w-full rounded-xl border border-blue-500 bg-white px-3 text-sm font-medium text-slate-900 outline-none ring-2 ring-blue-500/20"
-                            autoFocus
                           />
                         </div>
                       ) : (
@@ -436,6 +449,19 @@ export default function Companies({ auth }) {
           </table>
         </div>
       </div>
+
+      {/* In-app non-blocking confirmation dialog */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Company"
+        message={`Are you sure you want to delete "${deleteTarget?.name}"?\n\nWarning: Any projects associated with this company may be affected.`}
+        confirmText="Delete Company"
+        cancelText="Cancel"
+        isDanger={true}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 import {
   FolderTree, Calendar, Users, Sparkles, Plus, Trash2, Save,
   RefreshCw, CheckCircle2, Clock, ChevronDown, ChevronRight,
@@ -883,6 +884,7 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
     startDate: new Date().toISOString().slice(0, 10), description: "",
   });
   const [creating, setCreating] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, title: "", message: "", confirmLabel: "Delete", danger: true, onConfirm: null });
 
   // ── Fetch All Plans ──
   async function fetchAllPlans() {
@@ -1151,32 +1153,40 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
   }
 
   // ── Delete Plan ──
-  async function handleDeletePlan(pid, pName) {
-    if (!window.confirm(`Are you sure you want to delete the Project Plan for "${pName || "this project"}"?\n\nNote: The project itself and all employee work times will remain safe.`)) return;
-    try {
-      await api(`/api/project-plans/${pid}`, { method: "DELETE", token: auth.token });
-      const remainingPlans = allPlans.filter(p => (p.project?._id || p.project) !== pid);
-      setAllPlans(remainingPlans);
-      if (selectedId === pid) {
-        if (remainingPlans.length > 0) {
-          const nextId = remainingPlans[0].project?._id || remainingPlans[0].project;
-          setSelectedId(nextId);
-        } else {
-          setSelectedId("");
-          setPlan({
-            settings: {
-              projectType: "storyline-360", complexity: "Medium",
-              courseLengthMinutes: 60, moduleCount: 4,
-              startDate: new Date().toISOString().slice(0, 10), hoursPerDay: 7,
-            },
-            phases: [],
-          });
+  function handleDeletePlan(pid, pName) {
+    setDeleteConfirm({
+      open: true,
+      title: "Delete Project Plan",
+      message: `Are you sure you want to delete the Project Plan for "${pName || "this project"}"?\n\nNote: The project itself and all employee work times will remain safe.`,
+      confirmLabel: "Delete Plan",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api(`/api/project-plans/${pid}`, { method: "DELETE", token: auth.token });
+          const remainingPlans = allPlans.filter(p => (p.project?._id || p.project) !== pid);
+          setAllPlans(remainingPlans);
+          if (selectedId === pid) {
+            if (remainingPlans.length > 0) {
+              const nextId = remainingPlans[0].project?._id || remainingPlans[0].project;
+              setSelectedId(nextId);
+            } else {
+              setSelectedId("");
+              setPlan({
+                settings: {
+                  projectType: "storyline-360", complexity: "Medium",
+                  courseLengthMinutes: 60, moduleCount: 4,
+                  startDate: new Date().toISOString().slice(0, 10), hoursPerDay: 7,
+                },
+                phases: [],
+              });
+            }
+          }
+          setMsg({ text: `Project plan for "${pName || "Project"}" deleted successfully.`, type: "success" });
+        } catch (e) {
+          setMsg({ text: e.message || "Failed to delete project plan.", type: "error" });
         }
       }
-      setMsg({ text: `Project plan for "${pName || "Project"}" deleted successfully.`, type: "success" });
-    } catch (e) {
-      setMsg({ text: e.message || "Failed to delete project plan.", type: "error" });
-    }
+    });
   }
 
   // ── Export CSV ──
@@ -1240,8 +1250,16 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
   }
 
   function deletePhase(id) {
-    if (!window.confirm("Delete this phase and all its tasks?")) return;
-    setPlan(p => ({ ...p, phases: p.phases.filter(ph => ph.id !== id) }));
+    setDeleteConfirm({
+      open: true,
+      title: "Delete Phase",
+      message: "Are you sure you want to delete this phase and all its tasks?",
+      confirmLabel: "Delete Phase",
+      danger: true,
+      onConfirm: () => {
+        setPlan(p => ({ ...p, phases: p.phases.filter(ph => ph.id !== id) }));
+      }
+    });
   }
 
   function updatePhaseName(id, name) { setPlan(p => ({ ...p, phases: p.phases.map(ph => ph.id===id ? {...ph, name} : ph) })); }
@@ -1735,11 +1753,11 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
                   <div className="flex items-center gap-2.5">
                     <span className="text-slate-400">{phase.expanded !== false ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</span>
                     <input
-                      value={phase.name}
+                      value={phase.name || ""}
                       onClick={e => e.stopPropagation()}
                       onChange={e => updatePhaseName(phase.id, e.target.value)}
                       className="bg-transparent font-bold text-slate-900 text-sm outline-none focus:border-b border-blue-400 min-w-0 w-auto"
-                      style={{width: `${Math.max(phase.name.length, 20)}ch`}}
+                      style={{width: `${Math.max((phase.name || "").length, 20)}ch`}}
                     />
                     <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">{phase.tasks.length} tasks</span>
                   </div>
@@ -1797,7 +1815,7 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
                                     {/* Task Title + Deliverable */}
                                     <td className="px-4 py-3">
                                       <input
-                                        value={task.title}
+                                        value={task.title || ""}
                                         onChange={e => updateTask(phase.id, task.id, {title: e.target.value})}
                                         className="w-full font-semibold text-slate-900 bg-transparent outline-none focus:bg-blue-50 rounded px-1 -mx-1"
                                         placeholder="Task title"
@@ -2459,6 +2477,21 @@ export default function ProjectPlanner({ auth, theme: propTheme }) {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.open}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+        confirmLabel={deleteConfirm.confirmLabel}
+        danger={deleteConfirm.danger}
+        onConfirm={() => {
+          const fn = deleteConfirm.onConfirm;
+          setDeleteConfirm(prev => ({ ...prev, open: false }));
+          if (fn) fn();
+        }}
+        onClose={() => setDeleteConfirm(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

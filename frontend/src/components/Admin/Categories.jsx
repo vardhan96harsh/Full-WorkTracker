@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 
 function getInitials(name) {
   if (!name) return "CT";
@@ -31,6 +32,10 @@ export default function Categories({ auth }) {
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // In-app non-blocking confirmation modal
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   /* ================= LOAD ================= */
   async function load() {
@@ -143,28 +148,37 @@ export default function Categories({ auth }) {
   }
 
   /* ================= DELETE ================= */
-  async function del(category) {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${category.name}"?\n\nWarning: Any projects associated with this category may be affected.`
-    );
-    if (!confirmDelete) return;
+  function del(category) {
+    setDeleteTarget(category);
+  }
 
-    setLoading(true);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
     setErrorMsg("");
+
+    // If currently editing this category, reset edit state
+    if (editId === deleteTarget._id) {
+      setEditId(null);
+      setEditName("");
+    }
+
     try {
-      await api(`/api/categories/${category._id}`, {
+      await api(`/api/categories/${deleteTarget._id}`, {
         method: "DELETE",
         token: auth.token,
       });
 
-      setItems((prev) => prev.filter((it) => it._id !== category._id));
-      setSuccessMsg(`Category "${category.name}" deleted.`);
+      setItems((prev) => prev.filter((it) => it._id !== deleteTarget._id));
+      setSuccessMsg(`Category "${deleteTarget.name}" deleted.`);
       setTimeout(() => setSuccessMsg(""), 4000);
+      setDeleteTarget(null);
     } catch (e) {
       console.error(e);
       setErrorMsg(e?.message || "Failed to delete category.");
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   }
 
@@ -364,7 +378,6 @@ export default function Categories({ auth }) {
                               }
                             }}
                             className="h-9 w-full rounded-xl border border-blue-500 bg-white px-3 text-sm font-medium text-slate-900 outline-none ring-2 ring-blue-500/20"
-                            autoFocus
                           />
                         </div>
                       ) : (
@@ -437,6 +450,19 @@ export default function Categories({ auth }) {
           </table>
         </div>
       </div>
+
+      {/* In-app non-blocking confirmation dialog */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Category"
+        message={`Are you sure you want to delete "${deleteTarget?.name}"?\n\nWarning: Any projects associated with this category may be affected.`}
+        confirmText="Delete Category"
+        cancelText="Cancel"
+        isDanger={true}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -124,6 +124,12 @@ export default function AdminDailyReport({ auth }) {
   const [expandedUser, setExpandedUser] = useState({});
   const [expandedProject, setExpandedProject] = useState({});
   const [expandedProjectUser, setExpandedProjectUser] = useState({});
+  const [toastMsg, setToastMsg] = useState("");
+
+  function showToast(text) {
+    setToastMsg(text);
+    setTimeout(() => setToastMsg(""), 4000);
+  }
 
   /* ---------- Export Raw CSV ---------- */
   async function handleExportCSV() {
@@ -154,7 +160,7 @@ export default function AdminDailyReport({ auth }) {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      alert("Export failed. Check console for details.");
+      showToast("Export failed. Please check connection.");
     } finally {
       setDownloading(false);
     }
@@ -410,7 +416,7 @@ export default function AdminDailyReport({ auth }) {
   /* ---------- EXPORT COMPANY REPORT (EXCEL) ---------- */
   function exportCompanyExcel() {
     if (!companiesTree || companiesTree.length === 0) {
-      alert("No company data available to export.");
+      showToast("No company data available to export.");
       return;
     }
 
@@ -582,7 +588,7 @@ export default function AdminDailyReport({ auth }) {
   // EXPORT BY USER CSV
   function exportByUserCSV() {
     if (!byUserWithProjects || byUserWithProjects.length === 0) {
-      alert("No user data to export");
+      showToast("No user data available to export.");
       return;
     }
 
@@ -1742,6 +1748,15 @@ export default function AdminDailyReport({ auth }) {
               )}
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-2xl bg-slate-900/95 border border-slate-700 px-4 py-3 text-xs font-semibold text-white shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <AlertCircle size={15} className="text-amber-400 shrink-0" />
+          <span>{toastMsg}</span>
+          <button type="button" onClick={() => setToastMsg("")} className="ml-2 text-slate-400 hover:text-white transition">✕</button>
         </div>
       )}
     </div>

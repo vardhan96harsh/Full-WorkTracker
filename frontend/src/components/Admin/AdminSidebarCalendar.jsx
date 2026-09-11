@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../api.js";
+import ConfirmModal from "./ConfirmModal.jsx";
 import {
   CalendarDays,
   ChevronLeft,
@@ -54,6 +55,7 @@ export default function AdminSidebarCalendar({ auth, theme: propTheme }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState({ text: "", type: "" });
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, title: "", message: "", onConfirm: null });
 
   // Form & Modal state
   const [showModal, setShowModal] = useState(false);
@@ -160,20 +162,25 @@ export default function AdminSidebarCalendar({ auth, theme: propTheme }) {
     }
   }
 
-  async function handleDeleteHoliday(id, hName) {
-    if (!window.confirm(`Are you sure you want to delete the holiday "${hName || "this holiday"}"?`)) return;
-
-    try {
-      await api(`/api/holidays/${id}`, {
-        method: "DELETE",
-        token: auth.token,
-      });
-      setMsg({ text: `Holiday "${hName || ""}" deleted successfully.`, type: "success" });
-      loadHolidays();
-    } catch (err) {
-      console.error("Delete holiday error:", err);
-      setMsg({ text: err.message || "Failed to delete holiday.", type: "error" });
-    }
+  function handleDeleteHoliday(id, hName) {
+    setDeleteConfirm({
+      open: true,
+      title: "Delete Holiday",
+      message: `Are you sure you want to delete the holiday "${hName || "this holiday"}"?`,
+      onConfirm: async () => {
+        try {
+          await api(`/api/holidays/${id}`, {
+            method: "DELETE",
+            token: auth.token,
+          });
+          setMsg({ text: `Holiday "${hName || ""}" deleted successfully.`, type: "success" });
+          loadHolidays();
+        } catch (err) {
+          console.error("Delete holiday error:", err);
+          setMsg({ text: err.message || "Failed to delete holiday.", type: "error" });
+        }
+      }
+    });
   }
 
   function prevMonth() {
@@ -731,6 +738,18 @@ export default function AdminSidebarCalendar({ auth, theme: propTheme }) {
         </div>
       )}
 
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.open}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+        onConfirm={() => {
+          const fn = deleteConfirm.onConfirm;
+          setDeleteConfirm(prev => ({ ...prev, open: false }));
+          if (fn) fn();
+        }}
+        onClose={() => setDeleteConfirm(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

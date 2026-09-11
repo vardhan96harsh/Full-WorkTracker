@@ -1477,11 +1477,11 @@ async function loadMaster() {
 
                 <h2 className="mt-2 max-w-[420px] truncate text-lg font-semibold text-gray-900" title={
                   anyCurrent
-                    ? (activeSession.projectName || activeSession.project?.name || (activeSession.customTask ? `(Custom Task) — ${activeSession.customTask}` : "Unknown Project"))
+                    ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
                     : (mode === "project" && selectedProj ? selectedProj.name : "No active session")
                 }>
                   {anyCurrent
-                    ? (activeSession.projectName || activeSession.project?.name || (activeSession.customTask ? `(Custom Task) — ${activeSession.customTask}` : "Unknown Project"))
+                    ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
                     : (mode === "project" && selectedProj ? selectedProj.name : "No active session")}
                 </h2>
 
@@ -1755,12 +1755,17 @@ async function loadMaster() {
                       {/* Project & Task Title */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-sm shrink-0">📁</span>
-                          <span className="font-bold text-slate-900 truncate" title={p.projectName}>
-                            {p.projectName || "—"}
+                          <span className="text-sm shrink-0">{p.customTask ? "💼" : "📁"}</span>
+                          <span className="font-bold text-slate-900 truncate" title={p.projectName || p.customTask}>
+                            {p.projectName || p.customTask || "—"}
                           </span>
+                          {p.customTask && (
+                            <span className="shrink-0 inline-flex items-center rounded-full bg-purple-50 border border-purple-200 px-1.5 py-0.2 text-[9px] font-bold text-purple-700">
+                              Custom
+                            </span>
+                          )}
                         </div>
-                        {p.taskTitle && (
+                        {p.taskTitle && p.taskTitle !== (p.projectName || p.customTask) && (
                           <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 truncate max-w-full" title={p.taskTitle}>
                             <span>🎯</span>
                             <span className="truncate">{p.taskTitle}</span>
