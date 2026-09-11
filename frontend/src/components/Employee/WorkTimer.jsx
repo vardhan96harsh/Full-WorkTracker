@@ -1590,8 +1590,8 @@ async function loadMaster() {
         </div>
 
         {/* Sessions table (unchanged) */}
-   <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-5">
+   <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)] min-h-[580px] flex flex-col">
+  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-5 rounded-t-3xl">
     <div>
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">
         Work Overview
@@ -1615,10 +1615,10 @@ async function loadMaster() {
     )}
   </div>
 
-  <div className="mt-3">
+  <div className="mt-1">
     <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
       {/* Left Section: Date Range Picker + Date Filter Buttons */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 relative z-30">
         <DateRangePicker
           from={range.from}
           to={range.to}
@@ -1685,9 +1685,9 @@ async function loadMaster() {
     {/* 🔹 VIEW TOGGLE */}
 
     {view === "work" && (
-      <div className="mt-3 border-t border-slate-100 bg-slate-50/60 p-4">
-        <div className="max-h-[52vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm table-fixed border-separate border-spacing-0">
+      <div className="border-t border-slate-100 bg-slate-50/60 p-4 flex-1 flex flex-col rounded-b-3xl">
+        <div className="flex-1 max-h-[56vh] min-h-[360px] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col">
+          <table className="w-full text-sm table-fixed border-separate border-spacing-0 flex-1">
             <thead className="sticky top-0 z-20 bg-white border-b border-gray-200 text-xs font-bold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-3 text-left w-[130px] sm:w-[150px]">
@@ -1717,12 +1717,14 @@ async function loadMaster() {
             <tbody className="[&_tr]:border-t">
               {(!filteredGroupedSessions || filteredGroupedSessions.length === 0) && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center">
-                    <div className="inline-flex flex-col items-center gap-1 text-gray-500">
-                      <span className="text-2xl">🗓️</span>
-                      <span>No sessions found for this period</span>
-                      <span className="text-xs">
-                        Start a session to see it here.
+                  <td colSpan={7} className="px-4 py-24 text-center">
+                    <div className="inline-flex flex-col items-center gap-2 text-gray-500">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-xs">
+                        🗓️
+                      </div>
+                      <span className="text-base font-bold text-slate-800">No sessions found for this period</span>
+                      <span className="text-xs text-slate-400 max-w-sm">
+                        Choose a date range using the picker above or start a session to see your activity logs here.
                       </span>
                     </div>
                   </td>
@@ -1861,14 +1863,24 @@ async function loadMaster() {
     )}
 
     {view === "project" && (
-      <div className="mt-4 border-t border-slate-100 bg-slate-50/60 p-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="border-t border-slate-100 bg-slate-50/60 p-4 flex-1 flex flex-col rounded-b-3xl">
+        <div className="flex-1 min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col">
           <h3 className="text-lg font-bold text-slate-900 mb-3">
             Project – Work Summary
           </h3>
 
           {projectSummary.length === 0 ? (
-            <p className="text-sm text-gray-500">No project work found</p>
+            <div className="flex-1 flex items-center justify-center py-20 text-center">
+              <div className="inline-flex flex-col items-center gap-2 text-gray-500">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-xs">
+                  📁
+                </div>
+                <span className="text-base font-bold text-slate-800">No project work found</span>
+                <span className="text-xs text-slate-400">
+                  Logged project sessions will be summarized here once completed.
+                </span>
+              </div>
+            </div>
           ) : (
             <table className="w-full text-sm table-fixed border-collapse">
               <thead className="bg-slate-50">
