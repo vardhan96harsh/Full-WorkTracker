@@ -467,16 +467,6 @@ async function loadMaster() {
     return () => clearTicker();
   }, []);
 
-  // 🔥 AUTO REFRESH ONLY WHEN NO DATE RANGE IS SELECTED
-  useEffect(() => {
-    if (range.from && range.to) return; // ⛔ stop auto refresh
-
-    const interval = setInterval(() => {
-      loadSessionsAndTick();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [range.from, range.to]);
 
   useEffect(() => {
     loadProjects();
@@ -516,6 +506,17 @@ async function loadMaster() {
       if (typeof off === "function") off();
     };
   }, []);
+
+  // 🔄 Periodic auto-sync (every 15s) to guarantee WorkTimer and Overlay never desync
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      if (!offlineManager.isOffline() && !loadingSessionsRef.current) {
+        loadSessionsAndTick();
+      }
+    }, 15000);
+
+    return () => clearInterval(syncInterval);
+  }, [dateFilter, range.from, range.to]);
 
   // System sleep/idle handlers (unchanged)
   useEffect(() => {
@@ -831,6 +832,11 @@ async function loadMaster() {
 
   async function stop() {
     setError("");
+    clearTicker();
+    setActiveSession(null);
+    activeSessionRef.current = null;
+    setElapsed(0);
+
     try {
       await api("/api/work-sessions/stop", {
         method: "POST",
@@ -1062,11 +1068,12 @@ async function loadMaster() {
     for (const g of filteredGroupedSessions) {
       if (!g.projectName || g.projectName === "—") continue;
 
-      const key = `${g.projectName}|${g.date}`;
+      const key = `${g.projectName}|${g.taskType}|${g.date}`;
 
       if (!map.has(key)) {
         map.set(key, {
           projectName: g.projectName,
+          taskType: g.taskType,
           date: g.date,
           totalMs: 0,
           totalMinutes: 0,
@@ -1923,72 +1930,73 @@ async function loadMaster() {
               </thead>
 
               <tbody>
-                {projectSummary.map((p, i) => (
-                  <React.Fragment key={i}>
-                    <tr className="border-t hover:bg-blue-50/40 transition">
-                      <td className="px-3 py-2 font-medium">
-                        {p.projectName}
-                      </td>
-                      <td className="px-3 py-2">{p.taskType}</td>
-                      <td className="px-3 py-2 font-semibold text-slate-900">
-                        {minutesToHHMM(p.totalMinutes)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <button
-                          className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-100"
-                          onClick={() =>
-                            setExpandedProject(
-                              expandedProject === p.projectName
-                                ? null
-                                : p.projectName,
-                            )
-                          }
-                        >
-                          {expandedProject === p.projectName
-                            ? "Hide details"
-                            : "View details"}
-                        </button>
-                      </td>
-                    </tr>
+                {projectSummary.map((p) => {
+                  const rowKey = `${p.projectName}|${p.taskType}`;
+                  const isExpanded = expandedProject === rowKey;
 
-                    {/* Day-wise details */}
-                    {expandedProject === p.projectName && (
-                      <tr className="bg-slate-50">
-                        <td colSpan={5} className="px-4 py-3">
-                          <div className="text-sm font-medium mb-2">
-                            Day-wise work – {p.projectName}
-                          </div>
-
-                          <table className="w-full text-xs overflow-hidden rounded-xl border">
-                            <thead className="bg-slate-100">
-                              <tr>
-                                <th className="px-2 py-1 text-left">Date</th>
-                                <th className="px-2 py-1 text-left">
-                                  Total Hours
-                                </th>
-                              </tr>
-                            </thead>
-
-                            <tbody>
-                              {projectDailyBreakdown
-                                .filter(
-                                  (d) => d.projectName === p.projectName,
-                                )
-                                .map((d, idx) => (
-                                  <tr key={idx} className="border-t">
-                                    <td className="px-2 py-1">{d.date}</td>
-                                    <td className="px-2 py-1">
-                                      {minutesToHHMM(d.totalMinutes)}
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
+                  return (
+                    <React.Fragment key={rowKey}>
+                      <tr className="border-t hover:bg-blue-50/40 transition">
+                        <td className="px-3 py-2 font-medium">
+                          {p.projectName}
+                        </td>
+                        <td className="px-3 py-2">{p.taskType}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-900">
+                          {minutesToHHMM(p.totalMinutes)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-100 cursor-pointer"
+                            onClick={() =>
+                              setExpandedProject(isExpanded ? null : rowKey)
+                            }
+                          >
+                            {isExpanded ? "Hide details" : "View details"}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                ))}
+
+                      {/* Day-wise details */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50">
+                          <td colSpan={4} className="px-4 py-3">
+                            <div className="text-sm font-medium mb-2">
+                              Day-wise work – {p.projectName} ({p.taskType})
+                            </div>
+
+                            <table className="w-full text-xs overflow-hidden rounded-xl border">
+                              <thead className="bg-slate-100">
+                                <tr>
+                                  <th className="px-2 py-1 text-left">Date</th>
+                                  <th className="px-2 py-1 text-left">
+                                    Total Hours
+                                  </th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                {projectDailyBreakdown
+                                  .filter(
+                                    (d) =>
+                                      d.projectName === p.projectName &&
+                                      d.taskType === p.taskType,
+                                  )
+                                  .map((d, idx) => (
+                                    <tr key={idx} className="border-t">
+                                      <td className="px-2 py-1">{d.date}</td>
+                                      <td className="px-2 py-1">
+                                        {minutesToHHMM(d.totalMinutes)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -42,24 +42,30 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
   const [idleMinutes, setIdleMinutes] = useState(10);
   const isRunningRef = useRef(false);
 
-  // Helper to sync timer stopped timestamp
-  const getStoppedSince = useCallback(() => {
-    const val = localStorage.getItem("worktracker:timerStoppedSince");
+  // Helper to get or initialize the timestamp from which the 10-minute countdown runs
+  const getLastAlertTime = useCallback(() => {
+    const val = localStorage.getItem("worktracker:lastAlertTime") || localStorage.getItem("worktracker:timerStoppedSince");
     if (val && !isNaN(Number(val))) return Number(val);
     const now = Date.now();
-    localStorage.setItem("worktracker:timerStoppedSince", String(now));
+    localStorage.setItem("worktracker:lastAlertTime", String(now));
     return now;
   }, []);
 
-  const resetStoppedSince = useCallback(() => {
-    localStorage.setItem("worktracker:timerStoppedSince", String(Date.now()));
+  const resetAlertTime = useCallback(() => {
+    const now = Date.now();
+    localStorage.setItem("worktracker:lastAlertTime", String(now));
+    localStorage.setItem("worktracker:timerStoppedSince", String(now));
   }, []);
 
   // Check active session on server periodically or when mounted
   const checkServerSession = useCallback(async () => {
     if (!auth?.token) return;
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      const today = `${y}-${m}-${d}`;
       const list = await api(`/api/work-sessions/my?from=${today}&to=${today}`, {
         token: auth.token,
       });
@@ -70,17 +76,18 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
       localStorage.setItem("worktracker:isTimerRunning", hasActive ? "true" : "false");
 
       if (hasActive) {
+        localStorage.removeItem("worktracker:lastAlertTime");
         localStorage.removeItem("worktracker:timerStoppedSince");
         setShowPopup(false);
       } else {
-        if (!localStorage.getItem("worktracker:timerStoppedSince")) {
-          localStorage.setItem("worktracker:timerStoppedSince", String(Date.now()));
+        if (!localStorage.getItem("worktracker:lastAlertTime") && !localStorage.getItem("worktracker:timerStoppedSince")) {
+          resetAlertTime();
         }
       }
     } catch {
       // offline or network error; rely on local state
     }
-  }, [auth?.token]);
+  }, [auth?.token, resetAlertTime]);
 
   // Handle timer status events from WorkTimer and OverlayWidget
   useEffect(() => {
@@ -89,20 +96,20 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
       isRunningRef.current = isRunning;
 
       if (isRunning) {
+        localStorage.removeItem("worktracker:lastAlertTime");
         localStorage.removeItem("worktracker:timerStoppedSince");
         setShowPopup(false);
       } else {
-        if (!localStorage.getItem("worktracker:timerStoppedSince")) {
-          localStorage.setItem("worktracker:timerStoppedSince", String(Date.now()));
-        }
+        resetAlertTime();
       }
     };
 
     window.addEventListener("timer:statusChanged", handleStatusChanged);
     return () => window.removeEventListener("timer:statusChanged", handleStatusChanged);
-  }, []);
+  }, [resetAlertTime]);
 
-  // Main 5-second interval loop that checks if 10 minutes have elapsed
+  // Main 5-second interval loop:
+  // Triggers alert every 10 minutes whether user dismissed, minimized, or left open
   useEffect(() => {
     checkServerSession();
 
@@ -110,29 +117,30 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
       // If timer is currently running, nothing to pop up
       if (isRunningRef.current) return;
 
-      const stoppedSince = getStoppedSince();
-      const elapsed = Date.now() - stoppedSince;
+      const lastAlert = getLastAlertTime();
+      const elapsed = Date.now() - lastAlert;
 
       if (elapsed >= TEN_MINUTES_MS) {
         const mins = Math.max(10, Math.floor(elapsed / 60000));
         setIdleMinutes(mins);
-        setShowPopup((prev) => {
-          if (!prev) {
-            playChime();
-            window.worktracker?.alertTimerReminder?.();
-          }
-          return true;
-        });
+
+        // Reset the alert benchmark timestamp to now so the next alert will fire in 10 minutes
+        resetAlertTime();
+
+        // Show popup, play chime, and bring window to front / flash taskbar
+        setShowPopup(true);
+        playChime();
+        window.worktracker?.alertTimerReminder?.();
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [checkServerSession, getStoppedSince]);
+  }, [checkServerSession, getLastAlertTime, resetAlertTime]);
 
   // When user dismisses the popup (remind in 10 minutes)
   const handleDismiss = () => {
     setShowPopup(false);
-    resetStoppedSince();
+    resetAlertTime();
   };
 
   if (!showPopup) return null;
@@ -153,7 +161,8 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
 
         {/* Clean Professional Title */}
         <div className="pr-6">
-          <h3 className="text-base font-semibold text-slate-900">
+          <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
             Work Tracker is Off
           </h3>
           <p className="mt-2 text-sm text-slate-600 leading-normal">

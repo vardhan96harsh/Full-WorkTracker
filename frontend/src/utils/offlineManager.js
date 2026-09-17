@@ -85,7 +85,10 @@ export const offlineManager = {
   // ── Actions when Offline ──
   startOfflineSession({ projectId, projectName, companyName, categoryName, customTask, taskType, taskId, taskTitle, remarks }) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    const todayStr = `${y}-${m}-${d}`;
 
     const session = {
       _id: "offline_" + Date.now(),

@@ -21,9 +21,9 @@ export default function OverlayWidget() {
 
   const timerRef = useRef(null);
   const cardRef = useRef(null);
-
-  // keep a ref to current activeSession (for debugging / future use)
   const activeSessionRef = useRef(null);
+
+  // Sync state with Electron main process and other windows
   useEffect(() => {
     activeSessionRef.current = activeSession;
     const isRunning = Boolean(
@@ -70,12 +70,14 @@ export default function OverlayWidget() {
   }
 
   async function loadSessions(retryCount = 0) {
-    const prevActive = activeSessionRef.current;
-    const prevElapsed = elapsed;
     setError("");
 
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      const today = `${y}-${m}-${d}`;
 
       const list = await api(`/api/work-sessions/my?from=${today}&to=${today}`, { token: auth.token });
       offlineManager.setOffline(false);
@@ -87,8 +89,10 @@ export default function OverlayWidget() {
       const running = arr.find((x) => x.status === "active");
       const paused = arr.find((x) => x.status === "paused");
 
-      const cur = running || paused || prevActive;
+      // Strictly resolve to running/paused or null (never keep stale active session when stopped)
+      const cur = running || paused || null;
       setActiveSession(cur);
+      activeSessionRef.current = cur;
 
       clearTicker();
 
@@ -101,7 +105,7 @@ export default function OverlayWidget() {
       } else if (paused) {
         setElapsed(Math.max(0, (paused.totalMinutes || 0) * 60000));
       } else {
-        setElapsed(prevElapsed);
+        setElapsed(0);
       }
     } catch (e) {
       console.error("Overlay: error loading sessions", e);
@@ -112,8 +116,9 @@ export default function OverlayWidget() {
         setIsOffline(true);
 
         const offSess = offlineManager.getOfflineSession();
-        if (offSess) {
+        if (offSess && (offSess.status === "active" || offSess.status === "paused")) {
           setActiveSession(offSess);
+          activeSessionRef.current = offSess;
           clearTicker();
           if (offSess.status === "active") {
             const baseMs = Math.max(0, (offSess.accumulatedMinutes || 0) * 60000);
@@ -123,9 +128,13 @@ export default function OverlayWidget() {
             timerRef.current = setInterval(tick, 1000);
           } else if (offSess.status === "paused") {
             setElapsed(Math.max(0, (offSess.totalMinutes || offSess.accumulatedMinutes || 0) * 60000));
-          } else {
-            setElapsed(0);
           }
+          return;
+        } else {
+          setActiveSession(null);
+          activeSessionRef.current = null;
+          clearTicker();
+          setElapsed(0);
           return;
         }
       }
@@ -137,9 +146,6 @@ export default function OverlayWidget() {
 
       if (retryCount < 2 && !offlineManager.isOffline()) {
         setTimeout(() => loadSessions(retryCount + 1), 2000);
-      } else {
-        setActiveSession(prevActive);
-        setElapsed(prevElapsed);
       }
     }
   }
@@ -148,6 +154,17 @@ export default function OverlayWidget() {
   useEffect(() => {
     loadSessions();
     return () => clearTicker();
+  }, []);
+
+  // 🔄 Periodic auto-sync every 10 seconds to ensure overlay never desyncs from backend
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      if (!offlineManager.isOffline()) {
+        loadSessions();
+      }
+    }, 10000);
+
+    return () => clearInterval(syncInterval);
   }, []);
 
   // ---------- respond to sessions:changed from WorkTimer / main window ----------
@@ -237,6 +254,11 @@ export default function OverlayWidget() {
   }
 
   async function doStop() {
+    clearTicker();
+    setActiveSession(null);
+    activeSessionRef.current = null;
+    setElapsed(0);
+
     try {
       await api("/api/work-sessions/stop", {
         method: "POST",
@@ -265,63 +287,60 @@ export default function OverlayWidget() {
   const primaryDisabled = !hasRunning && !hasPaused && !lastProjectId;
   const primaryAction = hasRunning ? doPause : hasPaused ? doResume : doStart;
 
-return (
- <div
-  ref={cardRef}
-  className="rounded-lg flex items-center overflow-hidden"
-  style={{
-    WebkitAppRegion: "drag",
-    height: "28px",
-    paddingLeft: "6px",
-    paddingRight: "6px",
-    backgroundColor: "#F8FAFC",
-    boxShadow: "0 0 0 1px rgba(0,0,0,0.08)",
-  }}
->
+  return (
+    <div
+      ref={cardRef}
+      className="rounded-lg flex items-center overflow-hidden"
+      style={{
+        WebkitAppRegion: "drag",
+        height: "28px",
+        paddingLeft: "6px",
+        paddingRight: "6px",
+        backgroundColor: "#F8FAFC",
+        boxShadow: "0 0 0 1px rgba(0,0,0,0.08)",
+      }}
+    >
+      <div className="flex items-center gap-1 w-full">
+        {/* TIMER */}
+        <div
+          style={{
+            WebkitAppRegion: "no-drag",
+            color: isOffline ? "#D97706" : "#2563EB",
+          }}
+          className="flex-1 text-center font-mono text-[14px] leading-none tracking-tight cursor-pointer select-none flex items-center justify-center gap-1"
+          onClick={() => window.worktracker?.openMain?.()}
+          title={isOffline ? "Offline Mode - Saved Locally" : "Online"}
+        >
+          {isOffline && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+          <span>{fmt(elapsed)}</span>
+        </div>
 
-    <div className="flex items-center gap-1 w-full">
-      {/* TIMER */}
-      <div
-        style={{
-          WebkitAppRegion: "no-drag",
-          color: isOffline ? "#D97706" : "#2563EB",
-        }}
-        className="flex-1 text-center font-mono text-[14px] leading-none tracking-tight cursor-pointer select-none flex items-center justify-center gap-1"
-        onClick={() => window.worktracker?.openMain?.()}
-        title={isOffline ? "Offline Mode - Saved Locally" : "Online"}
-      >
-        {isOffline && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
-        <span>{fmt(elapsed)}</span>
+        {/* START / PAUSE / RESUME */}
+        <button
+          style={{ WebkitAppRegion: "no-drag" }}
+          className={`w-[18px] h-[18px] flex items-center justify-center rounded text-[9px] leading-none text-white disabled:opacity-40 ${
+            hasRunning
+              ? "bg-yellow-400 hover:bg-yellow-500"
+              : hasPaused
+              ? "bg-blue-500 hover:bg-blue-600"
+              : "bg-emerald-500 hover:bg-emerald-600"
+          }`}
+          disabled={primaryDisabled}
+          onClick={primaryAction}
+        >
+          {primaryIcon}
+        </button>
+
+        {/* STOP */}
+        <button
+          style={{ WebkitAppRegion: "no-drag" }}
+          className="w-[18px] h-[18px] flex items-center justify-center rounded bg-red-500 hover:bg-red-600 text-[9px] leading-none text-white disabled:opacity-40"
+          disabled={!anyCurrent}
+          onClick={doStop}
+        >
+          ■
+        </button>
       </div>
-
-      {/* START / PAUSE / RESUME */}
-      <button
-        style={{ WebkitAppRegion: "no-drag" }}
-        className={`w-[18px] h-[18px] flex items-center justify-center rounded text-[9px] leading-none text-white disabled:opacity-40 ${
-          hasRunning
-            ? "bg-yellow-400 hover:bg-yellow-500"
-            : hasPaused
-            ? "bg-blue-500 hover:bg-blue-600"
-            : "bg-emerald-500 hover:bg-emerald-600"
-        }`}
-        disabled={primaryDisabled}
-        onClick={primaryAction}
-      >
-        {primaryIcon}
-      </button>
-
-      {/* STOP */}
-      <button
-        style={{ WebkitAppRegion: "no-drag" }}
-        className="w-[18px] h-[18px] flex items-center justify-center rounded bg-red-500 hover:bg-red-600 text-[9px] leading-none text-white disabled:opacity-40"
-        disabled={!anyCurrent}
-        onClick={doStop}
-      >
-        ■
-      </button>
     </div>
-  </div>
-);
-
-
+  );
 }

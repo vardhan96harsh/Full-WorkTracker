@@ -4,6 +4,52 @@
 
 ---
 
+## [Version 2026.9.6] — 17 September 2026 (September Release #6)
+
+### 🚀 Highlights & Problem Fixes
+1. **Overlay Widget & Background Timer Synchronization Fix**:
+   - **Problem**: In `OverlayWidget.jsx`, `loadSessions()` had a fallback `running || paused || prevActive`, which caused stale active session objects to persist in the overlay even after the timer was stopped on the backend or main window. Consequently, the overlay timer kept displaying/running while background tracking was stopped, and the 10-minute idle reminder popup never triggered.
+   - **Fix**:
+     - Fixed `OverlayWidget.jsx` session resolution: if no active or paused session exists on the server, `activeSession` strictly resets to `null`, clears ticker, and resets elapsed to `0`.
+     - Added periodic auto-sync loops in both `OverlayWidget.jsx` (every 10s) and `WorkTimer.jsx` (every 15s) to guarantee both widgets stay 100% in sync with the backend.
+     - Enhanced `GlobalHeartbeat.jsx` to broadcast session change notifications if the server returns 0 updated active sessions.
+     - Updated `stop()` handlers in both `WorkTimer.jsx` and `OverlayWidget.jsx` to immediately clear tickers and reset states cleanly before network reconciliation.
+     - Ensured that when the timer stops anywhere, the 10-minute idle reminder popup countdown engages immediately and alerts reliably.
+
+---
+
+## [Version 2026.9.5] — 17 September 2026 (September Release #5)
+
+### 🚀 Highlights & Problem Fixes
+1. **Simplified Reminder Modal**:
+   - Removed the extra "Start Tracker" button inside [`TimerIdleReminder.jsx`](file:///d:/workTracker/projecttrack/frontend/src/components/Employee/TimerIdleReminder.jsx).
+   - Retained the clean, single "Dismiss" button and top-right "✕" close button without altering any other logic or timer functionality.
+
+---
+
+## [Version 2026.9.4] — 15 September 2026 (September Release #4)
+
+### 🚀 Highlights & Problem Fixes
+1. **Recurring 10-Minute Inactivity Alert Fix**:
+   - **Problem**: Previously, if the 10-minute "Work Tracker is Off" popup appeared and the user minimized or ignored the window without explicitly clicking "Dismiss" or "✕", the popup state remained `true` and the 10-minute cycle never re-engaged.
+   - **Fix**:
+     - Reset the reminder benchmark timer on every alert trigger.
+     - Automatically re-triggers the alert every 10 minutes whether the popup was dismissed, closed, minimized, or left open in the background.
+     - Added direct "Start Tracker" play button to instantly launch work tracking directly from the reminder modal.
+     - Restores minimized desktop window, flashes taskbar, and plays chime every 10 minutes as long as the timer remains stopped.
+
+---
+
+## [Version 2026.9.3] — 15 September 2026 (September Release #3)
+
+### 🚀 Highlights & Problem Fixes
+1. **New Release Build & Desktop Executable**:
+   - Packaged new Windows Desktop Installer: [`Work Tracker Setup 2026.9.3.exe`](file:///d:/workTracker/projecttrack/electron/dist/Work%20Tracker%20Setup%202026.9.3.exe).
+   - Rebuilt production frontend assets with latest Vite bundle and synchronised with Electron `frontend-dist`.
+   - Updated NSIS installer packaging configuration and blockmap.
+
+---
+
 ## [Version 2026.9.2] — 11 September 2026 (September Release #2)
 
 ### 🚀 Highlights & Problem Fixes

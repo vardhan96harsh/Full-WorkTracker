@@ -7,14 +7,16 @@ export default function GlobalHeartbeat({ auth }) {
 
     const sendHeartbeat = async () => {
       try {
-        await api("/api/work-sessions/heartbeat", {
+        const res = await api("/api/work-sessions/heartbeat", {
           method: "POST",
           token: auth.token,
         });
+
+        // If server says 0 active sessions were updated, notify windows to verify/sync state
+        if (res && res.ok && res.updated === 0) {
+          window.worktracker?.notifySessionsChanged?.();
+        }
       } catch (err) {
-        // 401 means token expired / invalid.
-        // Do not logout from heartbeat component.
-        // Let your main auth logic handle logout.
         if (err?.status === 401 || err?.response?.status === 401) {
           console.warn("Heartbeat skipped: token expired or unauthorized");
           return;
