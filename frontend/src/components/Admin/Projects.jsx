@@ -13,9 +13,61 @@ import {
   Tag,
   CheckCircle,
   Clock,
+  Calendar,
 } from "lucide-react";
 import { api } from "../../api.js";
 import ConfirmModal from "./ConfirmModal.jsx";
+
+function getTodayYMD() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getCompanyPrefix(companyName) {
+  if (!companyName || typeof companyName !== "string") return "PRJ";
+
+  const clean = companyName.trim().replace(/[^a-zA-Z0-9\s]/g, "");
+  if (!clean) return "PRJ";
+
+  const stopWords = new Set([
+    "pvt", "ltd", "inc", "corp", "corporation", "llc", "co", "company", "limited", "private"
+  ]);
+  const allWords = clean.split(/\s+/).filter(Boolean);
+  const significantWords = allWords.filter((w) => !stopWords.has(w.toLowerCase()));
+  const targetWords = significantWords.length > 0 ? significantWords : allWords;
+
+  if (targetWords.length === 1) {
+    return targetWords[0].slice(0, 4).toUpperCase();
+  }
+
+  if (targetWords.length >= 2) {
+    const initials = targetWords.map((w) => w[0]).join("").toUpperCase();
+    if (initials.length >= 2 && initials.length <= 4) {
+      return initials;
+    }
+    return initials.slice(0, 4);
+  }
+
+  return clean.slice(0, 4).toUpperCase() || "PRJ";
+}
+
+function getNextProjectCode(companyName, projectList = []) {
+  const prefix = getCompanyPrefix(companyName);
+  const regex = new RegExp(`^${prefix}-(\\d+)`, "i");
+
+  let maxNum = 0;
+  for (const p of projectList) {
+    const codeStr = p.code || "";
+    const m = codeStr.match(regex);
+    if (m && m[1]) {
+      const val = parseInt(m[1], 10);
+      if (val > maxNum) maxNum = val;
+    }
+  }
+
+  return `${prefix}-${String(maxNum + 1).padStart(3, "0")}`;
+}
 
 export default function Projects({ auth }) {
   const [companies, setCompanies] = useState([]);
@@ -27,6 +79,7 @@ export default function Projects({ auth }) {
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [date, setDate] = useState(() => getTodayYMD());
   const [status, setStatus] = useState("active");
   const [description, setDescription] = useState("");
 
@@ -40,6 +93,7 @@ export default function Projects({ auth }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
+  const [editDate, setEditDate] = useState("");
   const [editStatus, setEditStatus] = useState("active");
   const [editCompany, setEditCompany] = useState("");
   const [editCategory, setEditCategory] = useState("");
@@ -85,6 +139,12 @@ export default function Projects({ auth }) {
         (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
       );
       setItems(sorted);
+      if (company) {
+        const cObj = companies.find((c) => c._id === company);
+        if (cObj) {
+          setCode(getNextProjectCode(cObj.name, sorted));
+        }
+      }
     } catch (e) {
       console.error(e);
       setErrorMsg(e?.message || "Failed to load projects.");
@@ -140,13 +200,18 @@ export default function Projects({ auth }) {
     setErrorMsg("");
     setSuccessMsg("");
 
+    const compObj = companies.find((c) => c._id === company);
+    const finalCode = code.trim() || getNextProjectCode(compObj?.name, items);
+    const finalDate = date.trim() || getTodayYMD();
+
     try {
       const created = await api("/api/projects", {
         method: "POST",
         token: auth.token,
         body: {
           name: trimmed,
-          code: code.trim(),
+          code: finalCode,
+          date: finalDate,
           status,
           company,
           category,
@@ -158,24 +223,26 @@ export default function Projects({ auth }) {
         ...created,
         company: getCompanyObject(created.company, company),
         category: getCategoryObject(created.category, category),
-        code: created.code || code.trim(),
+        code: created.code || finalCode,
+        date: created.date || finalDate,
         status: created.status || status,
         description: created.description || description.trim(),
       };
 
-      setItems((prev) =>
-        [...prev, populatedProject].sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
-        )
+      const updatedList = [...items, populatedProject].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
       );
 
+      setItems(updatedList);
+
       setName("");
-      setCode("");
+      setCode(compObj ? getNextProjectCode(compObj.name, updatedList) : "");
+      setDate(getTodayYMD()); // Reset to default today's date
       setStatus("active");
       setCompany("");
       setCategory("");
       setDescription("");
-      setSuccessMsg(`Project "${populatedProject.name}" created successfully.`);
+      setSuccessMsg(`Project "${populatedProject.name}" (${populatedProject.code}) created successfully.`);
       setTimeout(() => setSuccessMsg(""), 4000);
     } catch (e) {
       console.error(e);
@@ -223,6 +290,7 @@ export default function Projects({ auth }) {
     setEditingId(it._id);
     setEditName(it.name || "");
     setEditCode(it.code || "");
+    setEditDate(it.date || it.createdAt?.slice(0, 10) || getTodayYMD());
     setEditStatus(it.status || "active");
     setEditCompany(
       typeof it.company === "object" ? it.company?._id || "" : it.company || ""
@@ -239,6 +307,7 @@ export default function Projects({ auth }) {
     setEditingId(null);
     setEditName("");
     setEditCode("");
+    setEditDate("");
     setEditStatus("active");
     setEditCompany("");
     setEditCategory("");
@@ -269,6 +338,7 @@ export default function Projects({ auth }) {
         body: {
           name: trimmed,
           code: editCode.trim(),
+          date: editDate.trim(),
           status: editStatus,
           company: editCompany,
           category: editCategory,
@@ -285,6 +355,8 @@ export default function Projects({ auth }) {
                 name: updated.name || trimmed,
                 code:
                   updated.code !== undefined ? updated.code : editCode.trim(),
+                date:
+                  updated.date !== undefined ? updated.date : editDate.trim(),
                 status: updated.status || editStatus,
                 company: getCompanyObject(updated.company, editCompany),
                 category: getCategoryObject(updated.category, editCategory),
@@ -328,6 +400,7 @@ export default function Projects({ auth }) {
         const byQuery = search
           ? (it.name || "").toLowerCase().includes(search) ||
             (it.code || "").toLowerCase().includes(search) ||
+            (it.date || "").toLowerCase().includes(search) ||
             (it.status || "").toLowerCase().includes(search) ||
             (it.description || "").toLowerCase().includes(search) ||
             (it.company?.name || "").toLowerCase().includes(search) ||
@@ -454,7 +527,16 @@ export default function Projects({ auth }) {
               </label>
               <select
                 value={company}
-                onChange={(e) => setCompany(e.target.value)}
+                onChange={(e) => {
+                  const newCompanyId = e.target.value;
+                  setCompany(newCompanyId);
+                  const compObj = companies.find((c) => c._id === newCompanyId);
+                  if (compObj) {
+                    setCode(getNextProjectCode(compObj.name, items));
+                  } else {
+                    setCode("");
+                  }
+                }}
                 className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
               >
                 <option value="">Select Company</option>
@@ -500,13 +582,36 @@ export default function Projects({ auth }) {
 
             {/* Project Code */}
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Project Code
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700">
+                  Project Code
+                </label>
+                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600">
+                  Auto-generated
+                </span>
+              </div>
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="e.g. PRJ-101"
+                placeholder="e.g. PRJ-001"
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white"
+              />
+            </div>
+
+            {/* Date */}
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700">
+                  Date *
+                </label>
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                  Default Today
+                </span>
+              </div>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
                 className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
               />
             </div>
@@ -529,7 +634,7 @@ export default function Projects({ auth }) {
             </div>
 
             {/* Description */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-700">
                 Description / Scope
               </label>
@@ -658,6 +763,7 @@ export default function Projects({ auth }) {
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
               <tr>
+                <th className="px-5 py-3.5">Date</th>
                 <th className="px-5 py-3.5">Company</th>
                 <th className="px-5 py-3.5">Category</th>
                 <th className="px-5 py-3.5">Project</th>
@@ -671,7 +777,7 @@ export default function Projects({ auth }) {
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center">
+                  <td colSpan={8} className="px-6 py-16 text-center">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                       <FolderKanban className="h-6 w-6" />
                     </div>
@@ -697,6 +803,22 @@ export default function Projects({ auth }) {
                       isEditing ? "bg-blue-50/30" : ""
                     }`}
                   >
+                    {/* Date */}
+                    <td className="px-5 py-4 whitespace-nowrap text-xs font-medium text-slate-700">
+                      {isEditing ? (
+                        <input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className="h-8 rounded-xl border border-slate-200 bg-white px-2 text-xs outline-none focus:border-blue-500"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span>{it.date || it.createdAt?.slice(0, 10) || "—"}</span>
+                        </div>
+                      )}
+                    </td>
                     {/* Company */}
                     <td className="px-5 py-4 font-medium text-slate-700">
                       {isEditing ? (

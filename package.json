@@ -1,4 +1,11 @@
 {
+  "name": "work-tracker-root",
+  "private": true,
+  "scripts": {
+    "build:frontend": "npm run build --prefix frontend",
+    "build:electron": "npm run dist --prefix electron",
+    "build": "npm run build:frontend && npm run build:electron"
+  },
   "dependencies": {
     "file-saver": "^2.0.5",
     "xlsx-js-style": "^1.2.0"

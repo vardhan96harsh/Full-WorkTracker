@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { X } from "lucide-react";
+import { X, Pause, Clock } from "lucide-react";
 import { api } from "../../api.js";
 
 const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 minutes
@@ -40,7 +40,10 @@ function playChime() {
 export default function TimerIdleReminder({ auth, onStartTimer }) {
   const [showPopup, setShowPopup] = useState(false);
   const [idleMinutes, setIdleMinutes] = useState(10);
+  const [timerStatus, setTimerStatus] = useState("stopped"); // "stopped" | "paused"
+
   const isRunningRef = useRef(false);
+  const timerStatusRef = useRef("stopped");
 
   // Helper to get or initialize the timestamp from which the 10-minute countdown runs
   const getLastAlertTime = useCallback(() => {
@@ -71,8 +74,12 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
       });
       const arr = Array.isArray(list) ? list : [];
       const hasActive = arr.some((s) => s.status === "active");
+      const pausedSession = arr.find((s) => s.status === "paused");
+      const status = hasActive ? "active" : (pausedSession ? "paused" : "stopped");
 
       isRunningRef.current = hasActive;
+      timerStatusRef.current = status;
+      setTimerStatus(status);
       localStorage.setItem("worktracker:isTimerRunning", hasActive ? "true" : "false");
 
       if (hasActive) {
@@ -93,7 +100,10 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
   useEffect(() => {
     const handleStatusChanged = (e) => {
       const isRunning = Boolean(e?.detail?.isRunning);
+      const status = e?.detail?.status || (isRunning ? "active" : "stopped");
       isRunningRef.current = isRunning;
+      timerStatusRef.current = status;
+      setTimerStatus(status);
 
       if (isRunning) {
         localStorage.removeItem("worktracker:lastAlertTime");
@@ -109,12 +119,12 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
   }, [resetAlertTime]);
 
   // Main 5-second interval loop:
-  // Triggers alert every 10 minutes whether user dismissed, minimized, or left open
+  // Triggers alert every 10 minutes whether timer is stopped OR paused!
   useEffect(() => {
     checkServerSession();
 
     const interval = setInterval(() => {
-      // If timer is currently running, nothing to pop up
+      // If timer is currently actively running, nothing to pop up
       if (isRunningRef.current) return;
 
       const lastAlert = getLastAlertTime();
@@ -137,48 +147,90 @@ export default function TimerIdleReminder({ auth, onStartTimer }) {
     return () => clearInterval(interval);
   }, [checkServerSession, getLastAlertTime, resetAlertTime]);
 
-  // When user dismisses the popup (remind in 10 minutes)
-  const handleDismiss = () => {
+  // Dismiss handler (clicking X icon, backdrop, or Escape)
+  const handleDismiss = useCallback(() => {
     setShowPopup(false);
     resetAlertTime();
-  };
+  }, [resetAlertTime]);
+
+  // Handle Escape key to dismiss
+  useEffect(() => {
+    if (!showPopup) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        handleDismiss();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showPopup, handleDismiss]);
 
   if (!showPopup) return null;
 
+  const isPaused = timerStatus === "paused";
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-in fade-in duration-150">
-      <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl animate-in zoom-in-95 duration-150">
-        {/* Top-Right Close Button */}
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/45 backdrop-blur-[2px] p-4 animate-in fade-in duration-150"
+      onClick={handleDismiss}
+    >
+      <div
+        className="relative w-full max-w-[380px] rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top-Right Cross ("X") Icon to Close */}
         <button
           type="button"
           onClick={handleDismiss}
-          className="absolute right-3.5 top-3.5 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+          className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors focus:outline-none"
           aria-label="Close"
           title="Close"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4.5 w-4.5" />
         </button>
 
-        {/* Clean Professional Title */}
-        <div className="pr-6">
-          <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-            Work Tracker is Off
-          </h3>
-          <p className="mt-2 text-sm text-slate-600 leading-normal">
-            Your timer is currently not running. Please turn on your tracker to record your work hours.
-          </p>
-        </div>
-
-        {/* Simple Dismiss / OK Button */}
-        <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            onClick={handleDismiss}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 transition active:scale-[0.98]"
+        {/* Content */}
+        <div className="flex items-start gap-3.5 pr-6">
+          <div
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+              isPaused
+                ? "bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400"
+                : "bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+            }`}
           >
-            Dismiss
-          </button>
+            {isPaused ? <Pause className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  isPaused
+                    ? "bg-amber-50 text-amber-800 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60"
+                    : "bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    isPaused ? "bg-amber-500" : "bg-blue-500"
+                  } animate-pulse`}
+                />
+                {isPaused ? `Paused • ${idleMinutes}m` : `Inactive • ${idleMinutes}m`}
+              </span>
+            </div>
+
+            <h3 className="mt-1.5 text-base font-bold text-slate-900 dark:text-white leading-snug">
+              {isPaused ? "Work Timer is Paused" : "Work Tracker is Inactive"}
+            </h3>
+
+            <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              {isPaused ? (
+                <>Your timer has been paused for <strong>{idleMinutes} minutes</strong>. Please remember to resume your tracker.</>
+              ) : (
+                <>Your tracker is currently not running. Please start your session to record your work hours.</>
+              )}
+            </p>
+          </div>
         </div>
       </div>
     </div>

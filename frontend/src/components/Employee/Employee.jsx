@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   LayoutDashboard,
-  ListTodo,
   FileClock,
   CalendarDays,
   LogOut,
@@ -9,7 +8,6 @@ import {
 import { api } from "../../api.js";
 
 import WorkTimer from "./WorkTimer.jsx";
-import MyTasks from "./MyTasks.jsx";
 import ManualRemarksPage from "./ManualRemarksPage.jsx";
 import UserCalendar from "./UserCalendar.jsx";
 import BirthdayBanner from "./Worktimer/BirthdayBanner.jsx";
@@ -21,11 +19,6 @@ const TABS = [
     key: "timer",
     label: "Dashboard",
     icon: LayoutDashboard,
-  },
-  {
-    key: "tasks",
-    label: "My Tasks",
-    icon: ListTodo,
   },
   {
     key: "manual",
@@ -41,24 +34,11 @@ const TABS = [
 
 export default function Employee({ auth, onLogout }) {
   const [tab, setTab] = useState("timer");
-  const [preselectedTask, setPreselectedTask] = useState(null);
-  const [taskCount, setTaskCount] = useState(0);
   const [todayBirthdays, setTodayBirthdays] = useState([]);
 
   useEffect(() => {
     if (!auth?.token) return;
     let isMounted = true;
-
-    async function loadCount() {
-      try {
-        const res = await api("/api/tasks/my/count", { token: auth.token });
-        if (isMounted && typeof res?.count === "number") {
-          setTaskCount(res.count);
-        }
-      } catch (err) {
-        console.error("Failed to load task count:", err);
-      }
-    }
 
     async function loadBirthdays() {
       try {
@@ -71,16 +51,10 @@ export default function Employee({ auth, onLogout }) {
       }
     }
 
-    loadCount();
     loadBirthdays();
-    const interval = setInterval(loadCount, 25000);
-    const handleRefresh = () => loadCount();
-    window.addEventListener("taskCount:refresh", handleRefresh);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
-      window.removeEventListener("taskCount:refresh", handleRefresh);
     };
   }, [auth?.token]);
 
@@ -159,19 +133,6 @@ export default function Employee({ auth, onLogout }) {
 
                     <span>{label}</span>
                   </div>
-
-                  {key === "tasks" && taskCount > 0 && (
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold rounded-full ${
-                        active
-                          ? "bg-blue-600 text-white"
-                          : "bg-blue-100 text-blue-800"
-                      } shadow-sm`}
-                      title={`${taskCount} assigned tasks`}
-                    >
-                      {taskCount}
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -181,17 +142,7 @@ export default function Employee({ auth, onLogout }) {
         {/* RIGHT CONTENT */}
         <main className="flex-1 overflow-y-auto bg-slate-50 p-3">
           {tab === "timer" && (
-            <WorkTimer auth={auth} initialSelectedTask={preselectedTask} />
-          )}
-
-          {tab === "tasks" && (
-            <MyTasks
-              auth={auth}
-              onStartTaskTimer={(task) => {
-                setPreselectedTask(task);
-                setTab("timer");
-              }}
-            />
+            <WorkTimer auth={auth} />
           )}
 
           {tab === "manual" && (

@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { api } from "../../api.js";
 import DateRangePicker from "../../components/DateRangePicker";
 import { offlineManager } from "../../utils/offlineManager.js";
-import { Wifi, WifiOff, RefreshCw, ListTodo, FolderKanban, RotateCw } from "lucide-react";
+import { Wifi, WifiOff, RefreshCw, FolderKanban } from "lucide-react";
 
-export default function WorkTimer({ auth, initialSelectedTask }) {
+export default function WorkTimer({ auth }) {
   // ---------------- STATES ----------------
   const [companies, setCompanies] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -16,11 +16,6 @@ export default function WorkTimer({ auth, initialSelectedTask }) {
   // Work Type (Project Mode Only)
   const [workTypes, setWorkTypes] = useState([]);
   const [workType, setWorkType] = useState("");
-
-  // ── Assigned Tasks (from Admin task management) ──
-  const [assignedTasks, setAssignedTasks] = useState([]);
-  const [allMyTasks, setAllMyTasks] = useState([]);
-  const [selectedTaskId, setSelectedTaskId] = useState("");
 
   // Filters
   const [companyId, setCompanyId] = useState("");
@@ -53,6 +48,13 @@ export default function WorkTimer({ auth, initialSelectedTask }) {
   const autoPausedRef = useRef(false);
 
   const resumeInProgressRef = useRef(false);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+  const pauseCooldownRef = useRef(0);
+  const actionLockRef = useRef(null);
+
+  // 🔒 Refs that mirror state for use in async callbacks (avoids stale closures)
+  const sessionsRef = useRef([]);
+  const elapsedRef = useRef(0);
 
   // 🌐 Offline State
   const [isOffline, setIsOffline] = useState(offlineManager.isOffline());
@@ -86,6 +88,14 @@ export default function WorkTimer({ auth, initialSelectedTask }) {
   useEffect(() => {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    elapsedRef.current = elapsed;
+  }, [elapsed]);
 
   // Machine Info
   const [machine, setMachine] = useState(null);
@@ -192,7 +202,8 @@ async function loadMaster() {
       };
 
       update();
-      timerRef.current = setInterval(update, 1000);
+      // ⚡ 500ms cadence ensures smooth second transitions without CPU/render overhead
+      timerRef.current = setInterval(update, 500);
     } else if (session?.status === "paused") {
       setElapsed(Math.max(0, (session.totalMinutes || session.accumulatedMinutes || 0) * 60000));
     } else {
@@ -200,14 +211,15 @@ async function loadMaster() {
     }
   }
 
-  async function loadSessionsAndTick() {
+  async function loadSessionsAndTick(options = {}) {
+    const isBackground = !!options.isBackground;
     if (loadingSessionsRef.current) return;
     loadingSessionsRef.current = true;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
 
-    const prevSessions = sessions;
-    const prevActiveSession = activeSession;
-    const prevElapsed = elapsed;
+    const prevSessions = sessionsRef.current;
+    const prevActiveSession = activeSessionRef.current;
+    const prevElapsed = elapsedRef.current;
 
     try {
       // 🌐 First, if online and there are queued offline sessions, reconcile with server
@@ -247,19 +259,56 @@ async function loadMaster() {
       offlineManager.setOffline(false);
       setIsOffline(false);
 
-      const arr = Array.isArray(sess) ? sess : [];
+      let arr = Array.isArray(sess) ? [...sess] : [];
+
+      // 🛡️ RECONCILIATION LOCK: Ensure ongoing optimistic actions (start, pause, resume, stop) are not overwritten by stale server GET responses
+      const lock = actionLockRef.current;
+      if (lock) {
+        if (lock.type === "start" && lock.session) {
+          const hasServerActive = arr.some((s) => s.status === "active" && String(s._id) !== String(lock.tempId));
+          if (!hasServerActive) {
+            arr = [lock.session, ...arr.filter((s) => String(s._id) !== String(lock.tempId))];
+          }
+        } else if (lock.type === "stop" && lock.sessionId) {
+          arr = arr.map((s) => (String(s._id) === String(lock.sessionId) || String(s._id).startsWith("temp-") ? { ...s, status: "stopped" } : s));
+        } else if (lock.type === "pause" && lock.sessionId) {
+          arr = arr.map((s) => (String(s._id) === String(lock.sessionId) ? { ...s, status: "paused" } : s));
+        } else if (lock.type === "resume" && lock.sessionId) {
+          arr = arr.map((s) => (String(s._id) === String(lock.sessionId) ? { ...s, status: "active" } : s));
+        }
+      } else if (activeSessionRef.current?._id && String(activeSessionRef.current._id).startsWith("temp-")) {
+        const hasServerActive = arr.some((s) => s.status === "active");
+        if (!hasServerActive) {
+          arr = [activeSessionRef.current, ...arr.filter((s) => String(s._id) !== String(activeSessionRef.current._id))];
+        }
+      }
+
       setSessions(arr);
 
       const running = arr.find((x) => x.status === "active");
       const paused = arr.find((x) => x.status === "paused");
-      const current = running || paused || null;
+      let current = running || paused || null;
+
+      if (lock && lock.type === "stop") {
+        current = null;
+      }
+
+      // 🛡️ Smoothness check: if the active session is ALREADY running and ticking, do NOT recreate or wipe out the interval
+      const prevActive = activeSessionRef.current;
+      const isAlreadyRunning =
+        prevActive?.status === "active" &&
+        current?.status === "active" &&
+        (String(prevActive?._id) === String(current?._id) || String(prevActive?._id).startsWith("temp-")) &&
+        timerRef.current !== null;
 
       const todayStr = getLocalDateStr(new Date());
       const isTodayIncluded = !range.from || (range.from <= todayStr && (!range.to || range.to >= todayStr));
       if (isTodayIncluded || current) {
         setActiveSession(current);
         activeSessionRef.current = current;
-        startLocalTicker(current);
+        if (!isAlreadyRunning) {
+          startLocalTicker(current);
+        }
       }
       setError("");
     } catch (e) {
@@ -273,13 +322,22 @@ async function loadMaster() {
 
         const offSess = offlineManager.getOfflineSession();
         if (offSess) {
+          const prevActive = activeSessionRef.current;
+          const isAlreadyRunning =
+            prevActive?.status === "active" &&
+            offSess?.status === "active" &&
+            (String(prevActive?._id) === String(offSess?._id) || String(prevActive?._id).startsWith("temp-")) &&
+            timerRef.current !== null;
+
           setActiveSession(offSess);
           activeSessionRef.current = offSess;
           setSessions((prev) => {
             const exists = prev.some((s) => s._id === offSess._id);
             return exists ? prev.map((s) => (s._id === offSess._id ? offSess : s)) : [offSess, ...prev];
           });
-          startLocalTicker(offSess);
+          if (!isAlreadyRunning) {
+            startLocalTicker(offSess);
+          }
         } else {
           setSessions(prevSessions);
           setActiveSession(prevActiveSession);
@@ -344,100 +402,6 @@ async function loadMaster() {
     }
   }
 
-  // ── Load tasks for the chosen project (assigned to user or in project plan)
-  async function loadAssignedTasks(pid) {
-    if (!pid) {
-      setAssignedTasks([]);
-      return;
-    }
-    try {
-      const [projectTasks, myTasks] = await Promise.all([
-        api(`/api/tasks?projectId=${pid}`, { token: auth.token }).catch(() => []),
-        api(`/api/tasks/my?projectId=${pid}`, { token: auth.token }).catch(() => []),
-      ]);
-
-      const myTaskIds = new Set((Array.isArray(myTasks) ? myTasks : []).map((t) => t._id));
-      const pList = Array.isArray(projectTasks) ? projectTasks : [];
-      const mList = Array.isArray(myTasks) ? myTasks : [];
-
-      // Combine without duplicates
-      const seen = new Set();
-      const combined = [];
-
-      for (const t of [...mList, ...pList]) {
-        if (!seen.has(t._id)) {
-          seen.add(t._id);
-          combined.push({
-            ...t,
-            isMyTask: myTaskIds.has(t._id),
-          });
-        }
-      }
-
-      // Sort: user's assigned tasks first, then alphabetically
-      combined.sort((a, b) => {
-        if (a.isMyTask && !b.isMyTask) return -1;
-        if (!a.isMyTask && b.isMyTask) return 1;
-        return (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
-      });
-
-      setAssignedTasks(combined);
-    } catch {
-      setAssignedTasks([]);
-    }
-  }
-
-  // ── Load all assigned tasks for the employee ──
-  async function loadAllMyTasks() {
-    try {
-      const data = await api("/api/tasks/my", { token: auth.token });
-      setAllMyTasks(Array.isArray(data) ? data : []);
-    } catch {
-      setAllMyTasks([]);
-    }
-  }
-
-  function parseTaskDetails(task) {
-    let phase = "";
-    let deliverable = "";
-    if (task?.description) {
-      const pMatch = task.description.match(/Phase:\s*([^|]+)/i);
-      if (pMatch) phase = pMatch[1].trim();
-      const dMatch = task.description.match(/Deliverable:\s*(.+)/i);
-      if (dMatch) deliverable = dMatch[1].trim();
-    }
-    return {
-      phase: phase && phase !== "General" ? phase : null,
-      deliverable: deliverable && deliverable !== "N/A" ? deliverable : null,
-    };
-  }
-
-  function selectAssignedTask(task) {
-    if (!task) return;
-    setMode("project");
-    const p = task.project;
-    const pid = typeof p === "object" ? p?._id : p;
-    if (pid) {
-      if (typeof p === "object") {
-        const compId = p.company?._id || p.company;
-        const catId = p.category?._id || p.category;
-        if (compId) setCompanyId(compId);
-        if (catId) setCategoryId(catId);
-        if (p.name) {
-          setProjects((prev) => (prev.some((x) => x._id === pid) ? prev : [...prev, p]));
-        }
-      }
-      setProjectId(pid);
-    }
-    setSelectedTaskId(task._id);
-    if (pid) {
-      localStorage.setItem("lastProjectId", pid);
-    }
-    if (task.taskType) {
-      setWorkType(task.taskType);
-    }
-  }
-
   async function safeAutoResume(flagKey) {
     if (resumeInProgressRef.current) return;
 
@@ -461,7 +425,6 @@ async function loadMaster() {
     (async () => {
       await loadMaster();
       await loadWorkTypes();
-      await loadAllMyTasks();
       await loadSessionsAndTick();
     })();
     return () => clearTicker();
@@ -480,45 +443,28 @@ async function loadMaster() {
     return () => clearInterval(interval);
   }, [companyId, categoryId]);
 
-  // ── Load assigned tasks whenever project changes ──
-  useEffect(() => {
-    if (projectId) {
-      loadAssignedTasks(projectId);
-    } else {
-      setAssignedTasks([]);
-      setSelectedTaskId("");
-    }
-  }, [projectId]);
-
-  // ── Pre-select task if launched from "My Tasks" portal ──
-  useEffect(() => {
-    if (initialSelectedTask) {
-      selectAssignedTask(initialSelectedTask);
-    }
-  }, [initialSelectedTask]);
-
   // Refresh from other windows
   useEffect(() => {
     const off = window.worktracker?.onSessionsChanged?.(() => {
-      loadSessionsAndTick();
+      loadSessionsAndTick({ isBackground: true });
     });
     return () => {
       if (typeof off === "function") off();
     };
   }, []);
 
-  // 🔄 Periodic auto-sync (every 15s) to guarantee WorkTimer and Overlay never desync
+  // 🔄 Periodic auto-sync (every 15s) in background to guarantee WorkTimer and Overlay never desync
   useEffect(() => {
     const syncInterval = setInterval(() => {
       if (!offlineManager.isOffline() && !loadingSessionsRef.current) {
-        loadSessionsAndTick();
+        loadSessionsAndTick({ isBackground: true });
       }
     }, 15000);
 
     return () => clearInterval(syncInterval);
   }, [dateFilter, range.from, range.to]);
 
-  // System sleep/idle handlers (unchanged)
+  // System sleep/idle handlers
   useEffect(() => {
     const handler = () => {
       const cur = activeSessionRef.current;
@@ -539,14 +485,11 @@ async function loadMaster() {
 
   useEffect(() => {
     const handler = () => {
-      const flag = localStorage.getItem("wt_auto_paused");
-      if (flag !== "1") return;
-
       const cur = activeSessionRef.current;
       if (!cur || cur.status !== "paused") return;
 
       autoPausedRef.current = false;
-      safeAutoResume("wt_auto_paused");
+      autoResumeOnActivity("system:wake");
     };
 
     const off = window.worktracker?.onSystemWake?.(handler);
@@ -570,48 +513,65 @@ async function loadMaster() {
     return () => typeof off === "function" && off();
   }, []);
 
-  useEffect(() => {
-    const handler = () => {
-      const flag = localStorage.getItem("wt_idle_paused");
-      if (flag !== "1") return;
+  // 🖱️ Automatic resume on user activity (mouse movement, keypress, click) when paused
+  const autoResumeOnActivity = useCallback((source = "user") => {
+    const cur = activeSessionRef.current;
+    if (!cur || cur.status !== "paused") return;
 
-      const cur = activeSessionRef.current;
-      if (!cur || cur.status !== "paused") return;
+    // Grace period right after pausing (ignore user releasing pause button or moving away)
+    if (Date.now() < pauseCooldownRef.current) return;
 
-      safeAutoResume("wt_idle_paused");
-    };
+    if (resumeInProgressRef.current) return;
 
-    const off = window.worktracker?.onSystemActive?.(handler);
-    return () => typeof off === "function" && off();
+    localStorage.removeItem("wt_auto_paused");
+    localStorage.removeItem("wt_idle_paused");
+    autoPausedRef.current = false;
+
+    resumeInProgressRef.current = true;
+    resume().finally(() => {
+      resumeInProgressRef.current = false;
+    });
   }, []);
 
   useEffect(() => {
     let lastCheck = 0;
-    const activityHandler = () => {
-      // Throttle: check at most once every 1.5 seconds to prevent freezing on mousemove
+    const activityHandler = (e) => {
+      const cur = activeSessionRef.current;
+      if (!cur || cur.status !== "paused") return;
+
+      if (Date.now() < pauseCooldownRef.current) return;
+
+      // For mouse move, require real movement of at least 4 pixels to filter micro sensor jitter
+      if (e && e.type === "mousemove") {
+        const dx = Math.abs(e.clientX - lastMousePosRef.current.x);
+        const dy = Math.abs(e.clientY - lastMousePosRef.current.y);
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+        if (dx < 4 && dy < 4) return;
+      }
+
       const now = Date.now();
-      if (now - lastCheck < 1500) return;
+      if (now - lastCheck < 800) return;
       lastCheck = now;
 
-      const autoPaused = localStorage.getItem("wt_auto_paused");
-      const idlePaused = localStorage.getItem("wt_idle_paused");
-
-      if (autoPaused === "1") {
-        autoPausedRef.current = false;
-        safeAutoResume("wt_auto_paused");
-      } else if (idlePaused === "1") {
-        safeAutoResume("wt_idle_paused");
-      }
+      autoResumeOnActivity(e?.type || "user");
     };
 
     window.addEventListener("mousemove", activityHandler, { passive: true });
     window.addEventListener("keydown", activityHandler, { passive: true });
+    window.addEventListener("mousedown", activityHandler, { passive: true });
+
+    // Also listen to system-level active and user-activity from Electron
+    const offActive = window.worktracker?.onSystemActive?.(() => autoResumeOnActivity("system:active"));
+    const offActivity = window.worktracker?.onUserActivity?.(() => autoResumeOnActivity("system:user-activity"));
 
     return () => {
       window.removeEventListener("mousemove", activityHandler);
       window.removeEventListener("keydown", activityHandler);
+      window.removeEventListener("mousedown", activityHandler);
+      if (typeof offActive === "function") offActive();
+      if (typeof offActivity === "function") offActivity();
     };
-  }, []);
+  }, [autoResumeOnActivity]);
 
   useEffect(() => {
     const off = window.worktracker?.onAppClosing?.(() => {
@@ -679,12 +639,11 @@ async function loadMaster() {
   const anyCurrent = Boolean(activeSession);
 
   const activeProjId = activeSession?.projectId || (typeof activeSession?.project === "object" ? activeSession?.project?._id : activeSession?.project);
-  const activeTaskId = activeSession?.taskId || (typeof activeSession?.task === "object" ? activeSession?.task?._id : activeSession?.task);
   const activeCustom = activeSession?.customTask || "";
 
   const isSameContext = anyCurrent && (
     mode === "project"
-      ? (activeProjId === projectId && (!selectedTaskId || activeTaskId === selectedTaskId))
+      ? (String(activeProjId || "") === String(projectId || "") && !!projectId)
       : (mode === "custom" && activeCustom === customTask.trim())
   );
 
@@ -708,21 +667,46 @@ async function loadMaster() {
     }
 
     const selectedProj = projects.find((p) => p._id === projectId);
-    const selectedTaskObj =
-      assignedTasks.find((t) => t._id === selectedTaskId) ||
-      allMyTasks.find((t) => t._id === selectedTaskId);
+
+    const now = new Date();
+    const todayStr = getLocalDateStr(now);
+    const tempId = "temp-" + Date.now();
+
+    // ⚡ INSTANT OPTIMISTIC START (0ms UI latency)
+    const optimisticSession = {
+      _id: tempId,
+      status: "active",
+      currentStart: now.toISOString(),
+      createdAt: now.toISOString(),
+      date: todayStr,
+      projectId: mode === "project" ? projectId : null,
+      projectName: mode === "project" ? (selectedProj?.name || "—") : "(Custom Task)",
+      companyName: mode === "project" ? (selectedProj?.company?.name || "—") : "—",
+      categoryName: mode === "project" ? (selectedProj?.category?.name || "—") : "—",
+      customTask: mode === "custom" ? customTask.trim() : null,
+      taskTitle: mode === "custom" ? customTask.trim() : null,
+      taskType: mode === "project" ? workType : "Alpha",
+      accumulatedMinutes: 0,
+      totalMinutes: 0,
+      segments: [],
+      remarks: "",
+    };
+
+    actionLockRef.current = { type: "start", tempId, session: optimisticSession };
+    setActiveSession(optimisticSession);
+    activeSessionRef.current = optimisticSession;
+    startLocalTicker(optimisticSession);
+    setSessions((prev) => [optimisticSession, ...prev.filter((s) => s._id !== tempId)]);
 
     try {
       const body = {
         taskType: mode === "project" ? workType : undefined,
         projectId: mode === "project" ? projectId : null,
-        taskId: mode === "project" && selectedTaskId ? selectedTaskId : null,
-        taskTitle: mode === "project" && selectedTaskObj ? selectedTaskObj.title : null,
         customTask: mode === "custom" ? customTask.trim() : null,
         remarks: "",
       };
 
-      await api("/api/work-sessions/start", {
+      const res = await api("/api/work-sessions/start", {
         method: "POST",
         token: auth.token,
         body,
@@ -730,8 +714,21 @@ async function loadMaster() {
 
       offlineManager.setOffline(false);
       setIsOffline(false);
+
+      if (res && res._id) {
+        actionLockRef.current = null;
+        setActiveSession((prev) => {
+          if (prev && (prev._id === tempId || prev._id === res._id)) {
+            return { ...res, currentStart: prev.currentStart || res.currentStart };
+          }
+          return prev;
+        });
+        activeSessionRef.current = res;
+        setSessions((prev) => [res, ...prev.filter((s) => s._id !== tempId && s._id !== res._id)]);
+      }
+
       window.worktracker?.notifySessionsChanged?.();
-      await loadSessionsAndTick();
+      loadSessionsAndTick({ isBackground: true });
     } catch (e) {
       // 🌐 OFFLINE FALLBACK: Start session in local cache seamlessly
       if (e?.isOffline || !navigator.onLine || e?.status === 0) {
@@ -739,8 +736,6 @@ async function loadMaster() {
         const offSess = offlineManager.startOfflineSession({
           projectId: mode === "project" ? projectId : null,
           projectName: mode === "project" ? selectedProj?.name : "(Custom Task)",
-          taskId: mode === "project" && selectedTaskId ? selectedTaskId : null,
-          taskTitle: selectedTaskObj?.title || null,
           companyName: selectedProj?.company?.name || "—",
           categoryName: selectedProj?.category?.name || "—",
           customTask: mode === "custom" ? customTask.trim() : null,
@@ -748,20 +743,51 @@ async function loadMaster() {
           remarks: "",
         });
 
+        actionLockRef.current = null;
         setActiveSession(offSess);
         activeSessionRef.current = offSess;
-        setSessions((prev) => [offSess, ...prev.filter((s) => s._id !== offSess._id)]);
-        startLocalTicker(offSess);
+        setSessions((prev) => [offSess, ...prev.filter((s) => s._id !== tempId && s._id !== offSess._id)]);
         setIsOffline(true);
         window.worktracker?.notifySessionsChanged?.();
       } else {
+        clearTicker();
+        setActiveSession(null);
+        activeSessionRef.current = null;
+        setSessions((prev) => prev.filter((s) => s._id !== tempId));
         setError(e.message || "Failed to start session.");
       }
+    } finally {
+      actionLockRef.current = null;
     }
   }
 
   async function pause() {
     setError("");
+    pauseCooldownRef.current = Date.now() + 2000; // 2s cooldown so mouse click on Pause button does not immediately auto-resume
+
+    const cur = activeSessionRef.current || activeSession;
+    if (!cur) return;
+
+    // ⚡ INSTANT OPTIMISTIC PAUSE (0ms UI latency)
+    const additionalMins = cur.currentStart
+      ? Math.max(0, (Date.now() - new Date(cur.currentStart).getTime()) / 60000)
+      : 0;
+    const newAccumulated = (cur.accumulatedMinutes || 0) + additionalMins;
+    const pausedSess = {
+      ...cur,
+      status: "paused",
+      accumulatedMinutes: newAccumulated,
+      totalMinutes: newAccumulated,
+      currentStart: null,
+    };
+
+    actionLockRef.current = { type: "pause", sessionId: cur._id, session: pausedSess };
+    clearTicker();
+    setElapsed(Math.max(0, newAccumulated * 60000));
+    setActiveSession(pausedSess);
+    activeSessionRef.current = pausedSess;
+    setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
+
     try {
       await api("/api/work-sessions/pause", {
         method: "POST",
@@ -771,17 +797,16 @@ async function loadMaster() {
       offlineManager.setOffline(false);
       setIsOffline(false);
       window.worktracker?.notifySessionsChanged?.();
-      await loadSessionsAndTick();
+      loadSessionsAndTick({ isBackground: true });
     } catch (e) {
       // 🌐 OFFLINE FALLBACK: Pause session in local cache
       if (e?.isOffline || !navigator.onLine || e?.status === 0) {
         console.log("🌐 Network offline -> pausing session in local cache");
-        const pausedSess = offlineManager.pauseOfflineSession();
+        const pausedSess = offlineManager.pauseOfflineSession(cur);
         if (pausedSess) {
-          clearTicker();
           setActiveSession(pausedSess);
           activeSessionRef.current = pausedSess;
-          setSessions((prev) => [pausedSess, ...prev.filter((s) => s._id !== pausedSess._id)]);
+          setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
           setIsOffline(true);
           window.worktracker?.notifySessionsChanged?.();
         }
@@ -789,12 +814,31 @@ async function loadMaster() {
         console.error("Pause failed:", e);
         setError(e?.message || "Failed to pause session.");
       }
+    } finally {
+      actionLockRef.current = null;
     }
   }
 
   async function resume() {
     setError("");
-    const targetSessionId = activeSession?._id || activeSessionRef.current?._id;
+    pauseCooldownRef.current = 0;
+    const cur = activeSessionRef.current || activeSession;
+    if (!cur) return;
+
+    // ⚡ INSTANT OPTIMISTIC RESUME (0ms UI latency)
+    const resumedSess = {
+      ...cur,
+      status: "active",
+      currentStart: new Date().toISOString(),
+    };
+
+    actionLockRef.current = { type: "resume", sessionId: cur._id, session: resumedSess };
+    setActiveSession(resumedSess);
+    activeSessionRef.current = resumedSess;
+    startLocalTicker(resumedSess);
+    setSessions((prev) => prev.map((s) => (s._id === cur._id ? resumedSess : s)));
+
+    const targetSessionId = cur._id;
     try {
       await api("/api/work-sessions/resume", {
         method: "POST",
@@ -809,12 +853,12 @@ async function loadMaster() {
       offlineManager.setOffline(false);
       setIsOffline(false);
       window.worktracker?.notifySessionsChanged?.();
-      await loadSessionsAndTick();
+      loadSessionsAndTick({ isBackground: true });
     } catch (e) {
       // 🌐 OFFLINE FALLBACK: Resume session in local cache
       if (e?.isOffline || !navigator.onLine || e?.status === 0) {
         console.log("🌐 Network offline -> resuming session in local cache");
-        const resumedSess = offlineManager.resumeOfflineSession();
+        const resumedSess = offlineManager.resumeOfflineSession(cur);
         if (resumedSess) {
           setActiveSession(resumedSess);
           activeSessionRef.current = resumedSess;
@@ -827,15 +871,37 @@ async function loadMaster() {
         console.error("Resume failed:", e);
         setError(e?.message || "Failed to resume session.");
       }
+    } finally {
+      actionLockRef.current = null;
     }
   }
 
   async function stop() {
     setError("");
+    const cur = activeSessionRef.current || activeSession;
+    const targetSessionId = cur?._id;
+
+    // ⚡ INSTANT OPTIMISTIC STOP (0ms UI latency)
+    actionLockRef.current = { type: "stop", sessionId: targetSessionId };
     clearTicker();
     setActiveSession(null);
     activeSessionRef.current = null;
     setElapsed(0);
+
+    if (cur) {
+      const additionalMins = cur.currentStart
+        ? Math.max(0, (Date.now() - new Date(cur.currentStart).getTime()) / 60000)
+        : 0;
+      const finalMins = (cur.accumulatedMinutes || 0) + additionalMins;
+      const stoppedSess = {
+        ...cur,
+        status: "stopped",
+        accumulatedMinutes: finalMins,
+        totalMinutes: finalMins,
+        currentStart: null,
+      };
+      setSessions((prev) => prev.map((s) => (s._id === cur._id ? stoppedSess : s)));
+    }
 
     try {
       await api("/api/work-sessions/stop", {
@@ -847,12 +913,12 @@ async function loadMaster() {
       offlineManager.setOffline(false);
       setIsOffline(false);
       window.worktracker?.notifySessionsChanged?.();
-      await loadSessionsAndTick();
+      loadSessionsAndTick({ isBackground: true });
     } catch (e) {
       // 🌐 OFFLINE FALLBACK: Stop session in local cache
       if (e?.isOffline || !navigator.onLine || e?.status === 0) {
         console.log("🌐 Network offline -> stopping session in local cache");
-        const stoppedSess = offlineManager.stopOfflineSession();
+        const stoppedSess = offlineManager.stopOfflineSession(stopRemarks.trim(), cur);
         if (stoppedSess) {
           clearTicker();
           setActiveSession(null);
@@ -866,6 +932,8 @@ async function loadMaster() {
         console.error("Stop failed:", e);
         setError(e?.message || "Failed to stop session.");
       }
+    } finally {
+      actionLockRef.current = null;
     }
   }
 
@@ -881,17 +949,24 @@ async function loadMaster() {
     return Math.max(0, ms);
   }
 
-  const todaysTotalMs = useMemo(() => {
+  const todaysCompletedMs = useMemo(() => {
     const todayStr = getLocalDateStr(new Date());
-
     let sum = 0;
     for (const s of sessions) {
-      if (s.date !== todayStr) continue; // ✅ today only
-      sum += getTodayMs(s);
+      if (s.date !== todayStr) continue;
+      // Do not count the active session here (it is counted via activeSessionLiveMs)
+      if (activeSession && String(s._id) === String(activeSession._id)) continue;
+      sum += (s.totalMinutes || s.accumulatedMinutes || 0) * 60000;
     }
-
     return sum;
-  }, [sessions, elapsed]);
+  }, [sessions, activeSession?._id]);
+
+  const activeSessionLiveMs = activeSession && activeSession.status === "active"
+    ? elapsed
+    : (activeSession ? (activeSession.totalMinutes || activeSession.accumulatedMinutes || 0) * 60000 : 0);
+
+  const isTodaySession = activeSession?.date ? activeSession.date === getLocalDateStr(new Date()) : true;
+  const todaysTotalMs = todaysCompletedMs + (isTodaySession ? activeSessionLiveMs : 0);
 
   const todaysSessionsCount = useMemo(() => {
     const todayStr = getLocalDateStr(new Date());
@@ -903,7 +978,6 @@ async function loadMaster() {
 
   const groupedSessions = useMemo(() => {
     const map = new Map();
-    const now = Date.now();
 
     for (const s of sessions) {
       const taskKey = s.taskId || s.taskTitle || (s.customTask ? `custom-${s.customTask}` : "none");
@@ -929,7 +1003,7 @@ async function loadMaster() {
       }
 
       const g = map.get(key);
-      const sessMs = getTodayMs(s, now);
+      const sessMs = (s.totalMinutes || s.accumulatedMinutes || 0) * 60000;
       g.totalMs += sessMs;
       g.totalMinutes = g.totalMs / 60000;
 
@@ -945,7 +1019,7 @@ async function loadMaster() {
     }
 
     return Array.from(map.values());
-  }, [sessions, elapsed]);
+  }, [sessions]);
 
   const filteredGroupedSessions = useMemo(() => {
     // ✅ IF DATE RANGE IS SELECTED, SHOW EVERYTHING RETURNED BY API
@@ -1146,150 +1220,9 @@ async function loadMaster() {
   </button>
 </div>
 
-        {/* ---------------- SELECT CONTEXT (PROJECT MODE ONLY) ---------------- */}
       {/* ---------------- SELECT CONTEXT (PROJECT MODE ONLY) ---------------- */}
       {mode === "project" && (
         <div className="space-y-4">
-          {/* 🌟 ALL ASSIGNED TASKS QUICK-SELECTOR 🌟 */}
-          {allMyTasks.length > 0 && (
-            <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-100/80">
-                    <ListTodo size={15} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Your Assigned Tasks
-                      </h3>
-                      <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[11px] font-bold text-blue-700 border border-blue-200/60">
-                        {allMyTasks.length}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Click any task to select it and auto-fill project details
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={loadAllMyTasks}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 transition cursor-pointer"
-                >
-                  <RotateCw size={12} />
-                  <span>Refresh Tasks</span>
-                </button>
-              </div>
-
-              <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-h-64 overflow-y-auto pr-1">
-                {allMyTasks.map((t) => {
-                  const isSelected = selectedTaskId === t._id;
-                  const proj = typeof t.project === "object" ? t.project : null;
-                  const projName = proj?.name || "Assigned Project";
-                  const projCode = proj?.code || "";
-                  const compName = proj?.company?.name || "";
-                  const catName = proj?.category?.name || "";
-                  const details = parseTaskDetails(t);
-
-                  const curProjId = activeSession?.projectId || (typeof activeSession?.project === "object" ? activeSession?.project?._id : activeSession?.project);
-                  const curTaskId = activeSession?.taskId || (typeof activeSession?.task === "object" ? activeSession?.task?._id : activeSession?.task);
-                  const isActiveTask = activeSession?.status === "active" && (curTaskId === t._id || (!curTaskId && curProjId === proj?._id));
-                  const isPausedTask = activeSession?.status === "paused" && (curTaskId === t._id || (!curTaskId && curProjId === proj?._id));
-
-                  return (
-                    <div
-                      key={t._id}
-                      onClick={() => selectAssignedTask(t)}
-                      className={`group cursor-pointer text-left rounded-xl border p-3 transition-all duration-150 flex flex-col justify-between gap-2 ${
-                        isActiveTask
-                          ? "border-emerald-500 bg-emerald-50/50 shadow-xs ring-2 ring-emerald-200"
-                          : isPausedTask
-                          ? "border-amber-400 bg-amber-50/40 shadow-xs ring-2 ring-amber-200"
-                          : isSelected
-                          ? "border-blue-500 bg-blue-50/50 shadow-xs ring-2 ring-blue-200"
-                          : "border-slate-200 bg-slate-50/40 hover:border-blue-300 hover:bg-white shadow-2xs"
-                      }`}
-                    >
-                      {/* TOP ROW: PROJECT NAME & CODE & TYPE */}
-                      <div className="flex items-start justify-between gap-2 w-full">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <FolderKanban size={15} className="text-blue-600 shrink-0" />
-                          <span className="text-xs font-bold text-slate-900 truncate" title={projName}>
-                            {projName}
-                          </span>
-                          {projCode && (
-                            <span className="rounded bg-slate-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700 shrink-0">
-                              {projCode}
-                            </span>
-                          )}
-                        </div>
-                        <span className="shrink-0 rounded-md bg-blue-50 border border-blue-200/70 px-1.5 py-0.2 text-[10px] font-bold text-blue-700 uppercase tracking-wide">
-                          {t.taskType || "Task"}
-                        </span>
-                      </div>
-
-                      {/* MIDDLE ROW: Phase Name & Task Title */}
-                      <div className="space-y-1">
-                        {details.phase && (
-                          <div className="flex items-center gap-1">
-                            <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700 truncate max-w-full">
-                              📌 {details.phase}
-                            </span>
-                          </div>
-                        )}
-                        <div className="text-xs font-semibold text-slate-800 line-clamp-1" title={t.title}>
-                          {t.title}
-                        </div>
-                        {details.deliverable && (
-                          <div className="text-[10px] text-slate-400 truncate">
-                            Deliverable: {details.deliverable}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* BOTTOM ROW: Company/Category & Status Action */}
-                      <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[10px] text-slate-400 w-full">
-                        <span className="truncate max-w-[130px]" title={compName ? `${compName}${catName ? ` · ${catName}` : ""}` : ""}>
-                          {compName ? `${compName}${catName ? ` · ${catName}` : ""}` : "—"}
-                        </span>
-
-                        <div className="flex items-center gap-1">
-                          {isActiveTask ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.2 text-[10px] font-bold text-emerald-800 animate-pulse">
-                              ● Running
-                            </span>
-                          ) : isPausedTask ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                selectAssignedTask(t);
-                                resume();
-                              }}
-                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 hover:bg-amber-200 px-2 py-0.2 text-[10px] font-bold text-amber-800 transition"
-                            >
-                              ❚❚ Resume
-                            </button>
-                          ) : isSelected ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.2 text-[10px] font-bold text-white">
-                              Selected ✓
-                            </span>
-                          ) : (
-                            <span className="font-semibold text-blue-600 group-hover:text-blue-800 text-[11px]">
-                              Pick Task →
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Project & Category Dropdowns */}
           <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.08)]">
             <div className="mb-5 flex items-center justify-between">
@@ -1320,7 +1253,6 @@ async function loadMaster() {
                     setCategoryId("");
                     setProjectId("");
                     setProjects([]);
-                    setSelectedTaskId("");
                   },
                 },
                 {
@@ -1332,7 +1264,6 @@ async function loadMaster() {
                   onChange: (value) => {
                     setCategoryId(value);
                     setProjectId("");
-                    setSelectedTaskId("");
                   },
                 },
                 {
@@ -1344,7 +1275,6 @@ async function loadMaster() {
                   onChange: (value) => {
                     setProjectId(value);
                     if (value) localStorage.setItem("lastProjectId", value);
-                    setSelectedTaskId("");
                   },
                 },
               ].map((field) => (
@@ -1387,39 +1317,6 @@ async function loadMaster() {
                   ))}
                 </select>
               </div>
-
-              {/* ── Task dropdown for the chosen project ── */}
-              {assignedTasks.length > 0 && (
-                <div className="flex flex-col gap-1.5 md:col-span-4">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Tasks for this Project
-                    <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                      {assignedTasks.length}
-                    </span>
-                  </label>
-
-                  <select
-                    value={selectedTaskId}
-                    disabled={!projectId}
-                    onChange={(e) => {
-                      const tid = e.target.value;
-                      setSelectedTaskId(tid);
-                      if (tid) {
-                        const task = assignedTasks.find((t) => t._id === tid);
-                        if (task?.taskType) setWorkType(task.taskType);
-                      }
-                    }}
-                    className="h-11 rounded-2xl border border-blue-200 bg-blue-50/50 px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    <option value="">Select task (optional)</option>
-                    {assignedTasks.map((t) => (
-                      <option key={t._id} value={t._id}>
-                        {t.isMyTask ? "★ " : ""}{t.title} — {t.taskType} {t.isMyTask ? "(Assigned to you)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1771,6 +1668,9 @@ async function loadMaster() {
               {filteredGroupedSessions.map((p) => {
                 const isRowActive = p.status === "active";
                 const isRowPaused = p.status === "paused";
+                const rowLiveMinutes = isRowActive && activeSession
+                  ? Math.max(p.totalMinutes, elapsed / 60000)
+                  : p.totalMinutes;
 
                 return (
                   <React.Fragment key={p.key}>
@@ -1842,10 +1742,10 @@ async function loadMaster() {
                         <div className={`font-mono text-sm font-bold tracking-tight ${
                           isRowActive ? "text-emerald-700" : "text-slate-900"
                         }`}>
-                          {minutesToHHMM(p.totalMinutes)}
+                          {minutesToHHMM(rowLiveMinutes)}
                         </div>
                         <div className="text-[10px] text-slate-400">
-                          {Math.round(p.totalMinutes || 0)}m total
+                          {Math.round(rowLiveMinutes || 0)}m total
                         </div>
                       </td>
 

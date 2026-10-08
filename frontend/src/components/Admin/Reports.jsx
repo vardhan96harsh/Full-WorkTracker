@@ -136,20 +136,28 @@ export default function Reports({ auth }) {
       const qp = new URLSearchParams({ user: userId, from, to }).toString();
       const projects = await api(`/api/reports/user-breakdown?${qp}`, { token: auth.token });
 
-      // 2) recent raw entries (limit 20) – reuse existing /api/timesheets if you have it
-      const keyMap = { user: "user" };
-      const params = new URLSearchParams({ from, to, limit: 20 });
-      params.append(keyMap["user"], userId);
-      const entries = await api(`/api/timesheets?${params.toString()}`, { token: auth.token });
+      // 2) recent raw entries (limit 20) from WorkSession
+      const params = new URLSearchParams({ from, to, user: userId });
+      const rawSessions = await api(`/api/work-sessions/admin/list?${params.toString()}`, { token: auth.token });
+      const entries = (Array.isArray(rawSessions) ? rawSessions : []).slice(0, 20).map((s) => ({
+        _id: s._id,
+        date: s.date || "",
+        companyName: s.companyName || s.project?.company?.name || "—",
+        categoryName: s.categoryName || s.project?.category?.name || "—",
+        projectName: s.projectName || s.project?.name || (s.customTask ? `(Custom) ${s.customTask}` : "—"),
+        taskType: s.taskType || "—",
+        hours: (Number(s.totalMinutes || 0) / 60).toFixed(2),
+        remarks: s.remarks || "—",
+      }));
 
       setDrawer((d) => ({
         ...d,
         loading: false,
         projects: Array.isArray(projects) ? projects : [],
-        entries: Array.isArray(entries) ? entries : [],
+        entries,
       }));
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load employee details:", e);
       setDrawer((d) => ({ ...d, loading: false }));
     }
   }
@@ -458,7 +466,7 @@ export default function Reports({ auth }) {
                         <tbody>
                           {drawer.entries.map((t) => (
                             <tr key={t._id} className="border-t border-slate-100">
-                              <td className="px-3 py-2">{t.dateLogged?.slice(0, 10) || ""}</td>
+                              <td className="px-3 py-2">{t.date || t.dateLogged?.slice(0, 10) || ""}</td>
                               <td className="px-3 py-2">{t.companyName || t.company?.name || "—"}</td>
                               <td className="px-3 py-2">{t.categoryName || t.category?.name || "—"}</td>
                               <td className="px-3 py-2">{t.projectName || t.project?.name || "—"}</td>

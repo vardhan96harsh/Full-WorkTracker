@@ -39,7 +39,23 @@ export const offlineManager = {
   getOfflineSession() {
     try {
       const raw = localStorage.getItem(WT_OFFLINE_SESSION_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && (parsed.accumulatedMinutes > 1440 || parsed.totalMinutes > 1440)) {
+        let segMs = 0;
+        if (Array.isArray(parsed.segments)) {
+          for (const seg of parsed.segments) {
+            if (seg.start && seg.end) {
+              const st = new Date(seg.start).getTime();
+              const et = new Date(seg.end).getTime();
+              if (et > st) segMs += (et - st);
+            }
+          }
+        }
+        parsed.accumulatedMinutes = Math.min(1440, Math.round((segMs / 60000) * 100) / 100);
+        parsed.totalMinutes = parsed.accumulatedMinutes;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -117,8 +133,8 @@ export const offlineManager = {
     return session;
   },
 
-  pauseOfflineSession() {
-    const session = this.getOfflineSession();
+  pauseOfflineSession(fallbackSession = null) {
+    const session = this.getOfflineSession() || (fallbackSession ? { ...fallbackSession } : null);
     if (!session) return null;
 
     const now = new Date();
@@ -149,8 +165,8 @@ export const offlineManager = {
     return session;
   },
 
-  resumeOfflineSession() {
-    const session = this.getOfflineSession();
+  resumeOfflineSession(fallbackSession = null) {
+    const session = this.getOfflineSession() || (fallbackSession ? { ...fallbackSession } : null);
     if (!session) return null;
 
     const now = new Date();
@@ -164,8 +180,8 @@ export const offlineManager = {
     return session;
   },
 
-  stopOfflineSession(remarks = "") {
-    const session = this.getOfflineSession();
+  stopOfflineSession(remarks = "", fallbackSession = null) {
+    const session = this.getOfflineSession() || (fallbackSession ? { ...fallbackSession } : null);
     if (!session) return null;
 
     const now = new Date();
@@ -213,18 +229,7 @@ export const offlineManager = {
     notifyListeners("syncing", true);
 
     try {
-      // Build updated session payload with live elapsed if still active
-      const payloadSession = { ...offlineSession };
-      if (payloadSession && payloadSession.status === "active" && payloadSession.currentStart) {
-        const segs = Array.isArray(payloadSession.segments) ? [...payloadSession.segments] : [];
-        const now = new Date();
-        segs.push({
-          start: payloadSession.currentStart,
-          end: now.toISOString(),
-          source: "offline",
-        });
-        payloadSession.segments = segs;
-      }
+      const payloadSession = offlineSession ? { ...offlineSession } : null;
 
       const res = await api("/api/work-sessions/sync-offline", {
         method: "POST",
@@ -234,13 +239,8 @@ export const offlineManager = {
 
       if (res?.ok && res?.session) {
         this.clearQueue();
+        this.clearOfflineSession();
         this.setOffline(false);
-
-        if (res.session.status === "stopped") {
-          this.clearOfflineSession();
-        } else {
-          this.saveOfflineSession(res.session);
-        }
 
         notifyListeners("syncSuccess", res.session);
         return res.session;

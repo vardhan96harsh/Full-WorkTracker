@@ -4,6 +4,49 @@
 
 ---
 
+## [Version 2026.10.4] — 8 October 2026 (Offline Sync & Timer Fix)
+
+### 🚀 Highlights & Problem Fixes
+1. **Offline Timer Runaway Duration & Deduplication Fix**:
+   - **Problem**: When working offline and reconnecting to the internet, background sync intervals repeatedly pushed duplicate overlapping time segments into the database. Each cycle compounded the duration in an arithmetic progression, causing astronomical inflated durations (e.g., adding ~1,140 hours).
+   - **Root Cause**:
+     - `offlineManager.js` (`syncWithServer`) was pushing open-ended segments into `segments` and retaining the offline session in `localStorage` upon sync success.
+     - `routes/workSessions.js` (`/sync-offline`) blindly appended segments and added their durations together without deduplicating identical or overlapping timestamps.
+   - **Fix & Enhancements**:
+     - **Interval Deduplication & Strict Idempotency**: `/sync-offline` now deduplicates segments by start time within a 3s window and reconciles premature heartbeat auto-pause segments.
+     - **Unique Duration Recalculation**: `session.accumulatedMinutes` is strictly recomputed from unique non-overlapping segments; repeated sync calls produce 0 extra minutes.
+     - **Database Self-Healing**: Added automatic self-healing logic in `/my` and `/admin/list` that automatically caps and repairs historical corrupted records (>1,440 min/day) to their true segment duration.
+     - **Frontend Queue Cleanup**: `offlineManager.js` now immediately calls `clearOfflineSession()` and `clearQueue()` upon a successful sync, terminating the sync loop.
+     - **Assets Sync**: Rebuilt production frontend bundle and synchronized with `electron/frontend-dist`.
+
+---
+
+## [Version 2026.10.1] — 1 October 2026 (October Release #1)
+
+### 🚀 Highlights & Architectural Improvements
+1. **Live WorkSession Reporting & Obsolete Code Removal**:
+   - Replaced legacy `Timesheet` data dependency in `backend/routes/reports.js` with live `WorkSession` data.
+   - Accurately computes active timer elapsed durations in `/api/reports/summary`, `/api/reports/user-breakdown`, and `/api/reports/export`.
+   - Fixed potential `ERR_HTTP_HEADERS_SENT` double-send on `/api/work-sessions/status` in `routes/workSessions.js`.
+
+2. **Modularized Admin Daily Report**:
+   - Decomposed monolithic `AdminDailyReport.jsx` (1,765 lines) into focused, maintainable subcomponents under `Admin/DailyReport/` (`reportHelpers.js`, `reportExporters.js`, `ReportHeaderMetrics.jsx`, `ReportFilterToolbar.jsx`, `RawSessionTable.jsx`, `CompanyHoursTable.jsx`, `ProjectHoursTable.jsx`, `UserHoursTable.jsx`).
+   - Retained 100% feature and style parity with zero breaking changes.
+
+3. **Desktop Release Packaging**:
+   - Generated new Windows Desktop Installer: `Work Tracker Setup 2026.10.1.exe`.
+   - Updated electron configuration and production frontend assets.
+
+---
+
+## [Version 2026.9.8] — 24 September 2026 (September Release #8)
+
+---
+
+## [Version 2026.9.7] — 20 September 2026 (September Release #7)
+
+---
+
 ## [Version 2026.9.6] — 17 September 2026 (September Release #6)
 
 ### 🚀 Highlights & Problem Fixes

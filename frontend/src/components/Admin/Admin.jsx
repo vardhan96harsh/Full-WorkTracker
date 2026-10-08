@@ -3,8 +3,6 @@ import {
   Building2,
   Tags,
   FolderKanban,
-  CalendarRange,
-  Sliders,
   Users as UsersIcon,
   BarChart3,
   FileClock,
@@ -19,8 +17,6 @@ import Users from "./Users.jsx";
 import AdminDailyReport from "./AdminDailyReport.jsx";
 import AdminManualTasks from "./AdminManualTasks.jsx";
 import AdminCalendar from "./AdminSidebarCalendar.jsx";
-import ProjectPlanner from "./ProjectPlanner.jsx";
-import AdminComplexity from "./AdminComplexity.jsx";
 import BirthdayBanner from "../Employee/Worktimer/BirthdayBanner.jsx";
 import logoImg from "../../assets/logo.png";
 
@@ -28,8 +24,6 @@ const TABS = [
   { key: "companies", label: "Companies", icon: Building2 },
   { key: "categories", label: "Categories", icon: Tags },
   { key: "projects", label: "Projects", icon: FolderKanban },
-  { key: "planner", label: "Project Planner", icon: CalendarRange },
-  { key: "complexity", label: "Complexity Adjustment", icon: Sliders },
   { key: "users", label: "Users", icon: UsersIcon },
   { key: "dailyReport", label: "Daily Report", icon: BarChart3 },
   { key: "manualTasks", label: "Manual Time Requests", icon: FileClock },
@@ -211,14 +205,6 @@ export default function Admin({ auth, onLogout }) {
 
             {tab === "projects" && (
               <Projects auth={auth} />
-            )}
-
-            {tab === "planner" && (
-              <ProjectPlanner auth={auth} theme={theme} />
-            )}
-
-            {tab === "complexity" && (
-              <AdminComplexity auth={auth} theme={theme} />
             )}
 
             {tab === "users" && (
