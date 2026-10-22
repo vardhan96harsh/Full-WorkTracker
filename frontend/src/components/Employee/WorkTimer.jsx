@@ -2,7 +2,32 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { api } from "../../api.js";
 import DateRangePicker from "../../components/DateRangePicker";
 import { offlineManager } from "../../utils/offlineManager.js";
-import { Wifi, WifiOff, RefreshCw, FolderKanban } from "lucide-react";
+import {
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  FolderKanban,
+  Play,
+  Pause,
+  Square,
+  Clock,
+  Building2,
+  Tag,
+  Calendar,
+  Download,
+  Briefcase,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Activity,
+  Laptop,
+  Sparkles,
+  ArrowRight,
+  TrendingUp,
+  History,
+  FileSpreadsheet
+} from "lucide-react";
 
 export default function WorkTimer({ auth, initialSelectedTask }) {
   // ---------------- STATES ----------------
@@ -1343,387 +1368,454 @@ async function loadMaster() {
 
   // ---- UI ----
   return (
-    <div className="space-y-4 max-w-[1500px] mx-auto pb-8">
-      {/* Error */}
+    <div className="space-y-4 max-w-[1500px] mx-auto pb-10">
+      {/* Error Banner */}
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 shadow-xs">
-          {error}
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-xs font-semibold text-rose-800 shadow-xs">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-700 font-bold text-xs">
+            !
+          </div>
+          <span className="flex-1">{error}</span>
         </div>
       )}
 
-      {/* ---------------- MODE TOGGLE ---------------- */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xs">
-        <div className="flex items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl">
-          <button
-            onClick={() => {
-              setMode("project");
-              setCustomTask("");
-            }}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-              mode === "project"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Project Mode</span>
-          </button>
+      {/* ---------------- SESSION CONFIGURATION CARD ---------------- */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
+        {/* Header: Title + Mode Toggle + Refresh */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+              <FolderKanban size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                Session Configuration
+              </h3>
+              <p className="text-xs text-slate-500">
+                {mode === "project" ? "Select company, category & project to track" : "Enter a custom ad-hoc task to track"}
+              </p>
+            </div>
+          </div>
 
-          <button
-            onClick={() => {
-              setMode("custom");
-              setCompanyId("");
-              setCategoryId("");
-              setProjectId("");
-              setProjects([]);
-            }}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-              mode === "custom"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Custom Task</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Mode Switcher */}
+            <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("project");
+                  setCustomTask("");
+                }}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                  mode === "project"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FolderKanban size={13} />
+                <span>Project Mode</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("custom");
+                  setCompanyId("");
+                  setCategoryId("");
+                  setProjectId("");
+                  setProjects([]);
+                }}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                  mode === "custom"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Briefcase size={13} />
+                <span>Custom Task</span>
+              </button>
+            </div>
+
+            {/* Refresh Sessions */}
+            <button
+              type="button"
+              onClick={loadSessionsAndTick}
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition cursor-pointer"
+              title="Reload work sessions & status"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin text-blue-600" : "text-slate-500"} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={loadSessionsAndTick}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-semibold text-slate-700 transition cursor-pointer"
-        >
-          <span className={loading ? "animate-spin text-blue-600 inline-block" : "text-slate-500"}>↻</span>
-          <span>Refresh</span>
-        </button>
+        {/* Planned Task Banner (if preselected from My Tasks) */}
+        {assignedTaskInfo && (
+          <div className="flex items-center justify-between rounded-xl bg-blue-50/80 border border-blue-200 px-4 py-2.5 text-xs text-blue-900 mb-4 shadow-2xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-white font-bold text-[10px]">
+                ✓
+              </span>
+              <span className="font-bold text-blue-950">Planned Task:</span>
+              <span className="font-semibold text-blue-800">{assignedTaskInfo.title}</span>
+              <span className="rounded-full bg-blue-100/90 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                {assignedTaskInfo.taskType || workType || "Alpha"}
+              </span>
+              {assignedTaskInfo.estimatedMinutes && (
+                <span className="text-[11px] text-blue-600">
+                  • Est: {Math.round(assignedTaskInfo.estimatedMinutes / 60)}h
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssignedTaskInfo(null)}
+              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer ml-2"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Form Fields: Project Mode */}
+        {mode === "project" && (
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Company */}
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <Building2 size={12} className="text-slate-400" />
+                <span>Company</span>
+              </label>
+              <select
+                value={companyId}
+                onChange={(e) => {
+                  setCompanyId(e.target.value);
+                  setCategoryId("");
+                  setProjectId("");
+                  setProjects([]);
+                }}
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+              >
+                <option value="">Select company</option>
+                {companies.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Category */}
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <Layers size={12} className="text-slate-400" />
+                <span>Category</span>
+              </label>
+              <select
+                value={categoryId}
+                disabled={!companyId}
+                onChange={(e) => {
+                  setCategoryId(e.target.value);
+                  setProjectId("");
+                }}
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400 cursor-pointer"
+              >
+                <option value="">Select category</option>
+                {categories.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project */}
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <span className="flex items-center gap-1">
+                  <FolderKanban size={12} className="text-slate-400" />
+                  <span>Project</span>
+                </span>
+                {projects.length > 0 && (
+                  <span className="text-[10px] text-blue-600 font-semibold lowercase">
+                    {projects.length} available
+                  </span>
+                )}
+              </label>
+              <select
+                value={projectId}
+                disabled={!companyId || !categoryId || !projects.length}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  if (e.target.value) localStorage.setItem("lastProjectId", e.target.value);
+                }}
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400 cursor-pointer"
+              >
+                <option value="">Select project</option>
+                {projects.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Work Type */}
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <Tag size={12} className="text-slate-400" />
+                <span>Work Type</span>
+              </label>
+              <select
+                value={workType}
+                disabled={!projectId}
+                onChange={(e) => setWorkType(e.target.value)}
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400 cursor-pointer"
+              >
+                {workTypes.map((wt) => (
+                  <option key={wt} value={wt}>
+                    {wt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Form Fields: Custom Mode */}
+        {mode === "custom" && (
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <Briefcase size={12} className="text-slate-400" />
+                <span>Custom Task Description</span>
+              </label>
+              <input
+                type="text"
+                value={customTask}
+                onChange={(e) => setCustomTask(e.target.value)}
+                placeholder="e.g., Code review, Design review, Client call"
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3.5 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <Tag size={12} className="text-slate-400" />
+                <span>Work Type</span>
+              </label>
+              <select
+                value={workType}
+                onChange={(e) => setWorkType(e.target.value)}
+                className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+              >
+                {workTypes.map((wt) => (
+                  <option key={wt} value={wt}>
+                    {wt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ---------------- SELECT CONTEXT (PROJECT MODE ONLY) ---------------- */}
-      {mode === "project" && (
-        <div className="space-y-4">
-          {/* Project & Category Dropdowns */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-            {assignedTaskInfo && (
-              <div className="flex items-center justify-between rounded-2xl bg-blue-50 border border-blue-200 px-4 py-2.5 text-xs text-blue-900 mb-4 shadow-xs">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-blue-900">Planned Task:</span>
-                  <span className="font-semibold text-blue-700">{assignedTaskInfo.title}</span>
-                  <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800">
-                    {assignedTaskInfo.taskType || workType || "Alpha"}
-                  </span>
-                  {assignedTaskInfo.estimatedMinutes && (
-                    <span className="text-[11px] text-blue-600">
-                      • Est: {Math.round(assignedTaskInfo.estimatedMinutes / 60)}h
+      {/* ---------------- TIMER COMMAND CENTER & SHIFT SUMMARY ---------------- */}
+      <div className="grid gap-4 lg:grid-cols-[1.45fr_0.85fr]">
+        {/* Live Timer Deck */}
+        <div className="relative rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-6 shadow-xl overflow-hidden flex flex-col justify-between">
+          {/* Subtle decorative glow */}
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-56 h-56 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+
+          <div className="relative z-10">
+            {/* Status Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                {hasRunning && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-bold text-emerald-300">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
                     </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAssignedTaskInfo(null)}
-                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer ml-2"
-                >
-                  Clear
-                </button>
+                    <span>Running Session</span>
+                  </span>
+                )}
+
+                {hasPaused && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-xs font-bold text-amber-300">
+                    <Pause size={12} className="fill-current" />
+                    <span>Session Paused</span>
+                  </span>
+                )}
+
+                {!hasRunning && !hasPaused && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+                    <span>Ready to Start</span>
+                  </span>
+                )}
+
+                {isOffline && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/40 px-2.5 py-0.5 text-[11px] font-bold text-amber-300 animate-pulse">
+                    <WifiOff size={11} />
+                    <span>Offline Mode</span>
+                  </span>
+                )}
+
+                {isSyncing && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 border border-blue-500/40 px-2.5 py-0.5 text-[11px] font-bold text-blue-300">
+                    <RefreshCw size={11} className="animate-spin" />
+                    <span>Syncing…</span>
+                  </span>
+                )}
               </div>
+
+              {/* Work type pill */}
+              {workType && (
+                <span className="rounded-lg bg-slate-800/90 border border-slate-700/80 px-2.5 py-0.5 text-[11px] font-semibold text-slate-300">
+                  {workType}
+                </span>
+              )}
+            </div>
+
+            {/* Active Project / Task Title */}
+            <div className="min-w-0 mb-4">
+              <h2
+                className="text-lg sm:text-xl font-black text-white truncate tracking-tight"
+                title={
+                  anyCurrent
+                    ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
+                    : (mode === "project" && selectedProj ? selectedProj.name : "Select a project or task")
+                }
+              >
+                {anyCurrent
+                  ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
+                  : (mode === "project" && selectedProj ? selectedProj.name : "No active session")}
+              </h2>
+
+              {/* Switching Context notification */}
+              {anyCurrent && !isSameContext && selectedProj && (
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-blue-400/30 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                  <span className="text-blue-300 font-medium">Switch target:</span>
+                  <strong className="font-bold text-white truncate max-w-[220px]">{selectedProj.name}</strong>
+                </div>
+              )}
+            </div>
+
+            {/* Clock Display */}
+            <div className="my-2">
+              <div className="font-mono text-5xl sm:text-6xl font-black tracking-tight text-white drop-shadow-md select-all">
+                {formatTime(elapsed)}
+              </div>
+              <p className="mt-1 text-xs text-slate-400 font-medium">
+                {hasRunning ? "Tracking live activity in current session" : hasPaused ? "Session timer is currently paused" : "Hit Start to begin logging time"}
+              </p>
+            </div>
+          </div>
+
+          {/* Controls Row */}
+          <div className="relative z-10 pt-4 mt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-3">
+            {hasRunning ? (
+              <button
+                type="button"
+                onClick={pause}
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.98] text-slate-950 font-bold px-7 py-3 text-xs shadow-lg shadow-amber-500/25 transition-all cursor-pointer"
+              >
+                <Pause size={16} className="fill-current" />
+                <span>Pause Session</span>
+              </button>
+            ) : hasPaused && isSameContext ? (
+              <button
+                type="button"
+                id="work-timer-start-btn"
+                onClick={resume}
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] text-slate-950 font-bold px-7 py-3 text-xs shadow-lg shadow-emerald-500/25 transition-all cursor-pointer"
+              >
+                <Play size={16} className="fill-current" />
+                <span>Resume Session</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="work-timer-start-btn"
+                onClick={start}
+                disabled={
+                  (mode === "project" && (!projectId || !workType)) ||
+                  (mode === "custom" && !customTask.trim())
+                }
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-slate-950 font-bold px-7 py-3 text-xs shadow-lg shadow-emerald-500/25 transition-all cursor-pointer"
+              >
+                <Play size={16} className="fill-current" />
+                <span>{hasPaused && !isSameContext ? "Switch & Start" : "Start Session"}</span>
+              </button>
             )}
 
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Project Work Details
-                </h3>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Select company, category, and project
-                </p>
-              </div>
+            {/* Stop Session Button */}
+            <button
+              type="button"
+              onClick={stop}
+              disabled={!anyCurrent}
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 active:scale-[0.98] disabled:border-slate-800 disabled:bg-slate-800/40 disabled:text-slate-600 disabled:cursor-not-allowed text-rose-300 font-bold px-6 py-3 text-xs transition-all cursor-pointer"
+            >
+              <Square size={14} className="fill-current" />
+              <span>Stop Session</span>
+            </button>
+          </div>
+        </div>
 
-              <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                {projects.length ? `${projects.length} Projects` : "No Projects"}
+        {/* Shift & Productivity Card */}
+        <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-slate-500">
+                <Clock size={16} className="text-blue-600" />
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Today's Shift
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Standard 8h Shift
               </span>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-4">
-              {[
-                {
-                  label: "Company",
-                  value: companyId,
-                  disabled: false,
-                  options: companies,
-                  placeholder: "Select company",
-                  onChange: (value) => {
-                    setCompanyId(value);
-                    setCategoryId("");
-                    setProjectId("");
-                    setProjects([]);
-                  },
-                },
-                {
-                  label: "Category",
-                  value: categoryId,
-                  disabled: !companyId,
-                  options: categories,
-                  placeholder: "Select category",
-                  onChange: (value) => {
-                    setCategoryId(value);
-                    setProjectId("");
-                  },
-                },
-                {
-                  label: "Project",
-                  value: projectId,
-                  disabled: !companyId || !categoryId || !projects.length,
-                  options: projects,
-                  placeholder: "Select project",
-                  onChange: (value) => {
-                    setProjectId(value);
-                    if (value) localStorage.setItem("lastProjectId", value);
-                  },
-                },
-              ].map((field) => (
-                <div key={field.label} className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {field.label}
-                  </label>
-
-                  <select
-                    value={field.value}
-                    disabled={field.disabled}
-                    onChange={(e) => field.onChange(e.target.value)}
-                    className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400"
-                  >
-                    <option value="">{field.placeholder}</option>
-                    {field.options.map((item) => (
-                      <option key={item._id} value={item._id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Work Type
-                </label>
-
-                <select
-                  value={workType}
-                  onChange={(e) => setWorkType(e.target.value)}
-                  disabled={!projectId}
-                  className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400"
-                >
-                  {workTypes.map((wt) => (
-                    <option key={wt} value={wt}>
-                      {wt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-{mode === "custom" && (
-  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-    <div className="mb-4">
-      <h3 className="text-sm font-bold text-slate-900">
-        Custom Task Details
-      </h3>
-      <p className="mt-0.5 text-xs text-slate-500">
-        Add your custom work manually
-      </p>
-    </div>
-
-    <div className="grid gap-4 md:grid-cols-2">
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Custom Task
-        </label>
-
-        <input
-          type="text"
-          value={customTask}
-          onChange={(e) => setCustomTask(e.target.value)}
-          placeholder="e.g. Team meeting, code review"
-          className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Work Type
-        </label>
-
-        <select
-          value={workType}
-          onChange={(e) => setWorkType(e.target.value)}
-          className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-        >
-          {workTypes.map((wt) => (
-            <option key={wt} value={wt}>
-              {wt}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  </div>
-)}
-
-        {/* ---------------- Premium Timer + Today Summary ---------------- */}
-        <div className="grid gap-3.5 lg:grid-cols-[1.4fr_0.8fr]">
-          {/* Timer Card */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Current Session
-                  </p>
-
-                  {hasRunning && (
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200/60">
-                      ● Running
-                    </span>
-                  )}
-
-                  {hasPaused && (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 border border-amber-200/60">
-                      Paused
-                    </span>
-                  )}
-
-                  {isOffline && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-800 animate-pulse">
-                      <WifiOff size={11} className="text-amber-600" />
-                      Offline
-                    </span>
-                  )}
-
-                  {isSyncing && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                      <RefreshCw size={11} className="animate-spin text-blue-600" />
-                      Syncing…
-                    </span>
-                  )}
-                </div>
-
-                <h2
-                  className="mt-1 max-w-[420px] truncate text-base font-bold text-slate-900"
-                  title={
-                    anyCurrent
-                      ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
-                      : (mode === "project" && selectedProj ? selectedProj.name : "No active session")
-                  }
-                >
-                  {anyCurrent
-                    ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
-                    : (mode === "project" && selectedProj ? selectedProj.name : "No active session")}
-                </h2>
-
-                {/* Show context switch badge if a different project is selected */}
-                {anyCurrent && !isSameContext && selectedProj && (
-                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-900 font-medium">
-                    <span className="text-blue-600">Switching to:</span>
-                    <strong className="font-bold text-blue-950 truncate max-w-[200px]">{selectedProj.name}</strong>
-                  </div>
-                )}
-
-                <div className="mt-1 font-mono text-4xl font-extrabold tracking-tight text-slate-950">
-                  {formatTime(elapsed)}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5 md:flex-col md:items-stretch shrink-0">
-                {/* 1. FIRST BUTTON: Start Session (idle) / Pause (running) / Resume (paused) */}
-                {hasRunning ? (
-                  <button
-                    onClick={pause}
-                    className="group inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-orange-500 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(249,115,22,0.16)] transition-all duration-200 hover:bg-orange-50 hover:shadow-[0_8px_24px_rgba(249,115,22,0.24)] active:scale-[0.98] cursor-pointer"
-                  >
-                    <span className="text-lg font-bold leading-none text-orange-500">
-                      ❚❚
-                    </span>
-                    <span>Pause</span>
-                  </button>
-                ) : (hasPaused && isSameContext) ? (
-                  <button
-                    id="work-timer-start-btn"
-                    onClick={resume}
-                    className="group inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-green-600 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 hover:shadow-[0_8px_24px_rgba(22,163,74,0.22)] active:scale-[0.98] cursor-pointer"
-                  >
-                    <span className="inline-flex items-center text-green-600">
-                      <svg
-                        className="h-4 w-4 fill-green-600"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </span>
-                    <span>Resume</span>
-                  </button>
-                ) : (
-                  <button
-                    id="work-timer-start-btn"
-                    onClick={start}
-                    disabled={
-                      (mode === "project" && (!projectId || !workType)) ||
-                      (mode === "custom" && !customTask.trim())
-                    }
-                    className="inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-green-600 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
-                  >
-                    <span className="inline-flex items-center text-green-600">
-                      <svg
-                        className="h-4 w-4 fill-green-600"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </span>
-                    <span>{hasPaused && !isSameContext ? "Switch & Start" : "Start Session"}</span>
-                  </button>
-                )}
-
-                {/* 2. SECOND BUTTON: Stop Session */}
-                <button
-                  onClick={stop}
-                  disabled={!anyCurrent}
-                  className="inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-red-500 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(239,68,68,0.14)] transition-all duration-200 hover:bg-red-50 hover:shadow-[0_8px_24px_rgba(239,68,68,0.22)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
-                >
-                  <span className="grid h-5 w-5 place-items-center rounded-full border-2 border-red-500 text-red-500 text-[10px]">
-                    ■
-                  </span>
-                  <span>Stop Session</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Today Summary Card (Soft Slate & Pill Chips) */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Today Total
-                </p>
-                <span className="text-[10px] font-medium text-slate-400">
-                  Logged Time
-                </span>
-              </div>
-
-              <div className="mt-1.5 font-mono text-3xl font-extrabold tracking-tight text-slate-900">
+            <div className="mt-4">
+              <span className="text-xs font-semibold text-slate-400 block">Total Logged Time</span>
+              <div className="mt-1 font-mono text-4xl font-black tracking-tight text-slate-900">
                 {formatTime(todaysTotalMs)}
               </div>
             </div>
 
-            {/* Pill chips directly below the timer */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {/* Status Pill Chip */}
+            {/* 8-Hour Goal Progress Bar */}
+            <div className="mt-4 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">Daily Goal Progress</span>
+                <span className="font-bold text-slate-800">
+                  {Math.min(100, Math.round((todaysTotalMs / (8 * 3600 * 1000)) * 100))}%
+                </span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 border border-slate-200/60 p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, Math.round((todaysTotalMs / (8 * 3600 * 1000)) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Metric chips */}
+          <div className="pt-4 mt-4 border-t border-slate-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">Shift Status</span>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border ${
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold border ${
                   hasRunning
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                     : hasPaused
-                    ? "bg-amber-50 text-amber-700 border-amber-200/80"
-                    : "bg-slate-50 text-slate-600 border-slate-200/70"
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-slate-50 text-slate-600 border-slate-200"
                 }`}
               >
                 <span
@@ -1735,399 +1827,496 @@ async function loadMaster() {
                       : "bg-slate-400"
                   }`}
                 />
-                {hasRunning ? "Working" : hasPaused ? "Paused" : "Idle"}
-              </span>
-
-              {/* Sessions Count Pill Chip */}
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 border border-slate-200/70 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                <span className="text-slate-400 font-normal">Sessions:</span>
-                <span className="font-bold text-slate-900">{todaysSessionsCount}</span>
+                {hasRunning ? "Actively Working" : hasPaused ? "On Pause / Break" : "Idle"}
               </span>
             </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">Logged Sessions</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/90 border border-slate-200 px-2.5 py-0.5 text-xs font-bold text-slate-900">
+                <Layers size={11} className="text-slate-400" />
+                <span>{todaysSessionsCount} {todaysSessionsCount === 1 ? "Session" : "Sessions"}</span>
+              </span>
+            </div>
+
+            {auth?.user?.machineName && (
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                <span className="flex items-center gap-1">
+                  <Laptop size={12} />
+                  Workstation
+                </span>
+                <span className="font-mono text-slate-600 truncate max-w-[140px]">
+                  {auth.user.machineName}
+                </span>
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* Sessions table */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs min-h-[540px] flex flex-col overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+        {/* ---------------- WORK OVERVIEW / SESSIONS TABLE ---------------- */}
+        <div className="rounded-3xl border border-slate-200/90 bg-white shadow-xs min-h-[540px] flex flex-col overflow-hidden">
+          {/* Card Header */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-6 py-4">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600">
-                Work Overview
-              </p>
-
+              <div className="flex items-center gap-2">
+                <span className="flex h-2 w-2 rounded-full bg-blue-600"></span>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600">
+                  Work Overview
+                </p>
+              </div>
               <h3 className="mt-0.5 text-lg font-bold text-slate-900">
                 {range.from && range.to
-                  ? "Custom Date Range"
+                  ? `Custom Range (${range.from} → ${range.to})`
                   : dateFilter === "today"
-                    ? "Today’s Work Sessions"
-                    : dateFilter === "week"
-                      ? "This Week’s Work Sessions"
-                      : "This Month’s Work Sessions"}
+                  ? "Today’s Work Sessions"
+                  : dateFilter === "week"
+                  ? "This Week’s Work Sessions"
+                  : "This Month’s Work Sessions"}
               </h3>
             </div>
 
             {loading && (
-              <span className="rounded-full bg-blue-50 border border-blue-200/60 px-3 py-1 text-xs font-semibold text-blue-600 animate-pulse">
-                Loading…
+              <span className="rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 animate-pulse flex items-center gap-1.5">
+                <RefreshCw size={12} className="animate-spin" />
+                <span>Loading records…</span>
               </span>
             )}
           </div>
 
-          <div className="mt-1">
-            <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5">
-              {/* Left Section: Date Range Picker + Date Filter Buttons */}
-              <div className="flex flex-wrap items-center gap-2 relative z-30">
-                <DateRangePicker
-                  from={range.from}
-                  to={range.to}
-                  onChange={(r) => {
-                    setRange(r); // Save selected dates and reload sessions
-                  }}
-                />
+          {/* Filter & Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-b border-slate-100 bg-white">
+            {/* Left: Date controls */}
+            <div className="flex flex-wrap items-center gap-2 relative z-30">
+              <DateRangePicker
+                from={range.from}
+                to={range.to}
+                onChange={(r) => {
+                  setRange(r);
+                }}
+              />
 
-                {["today", "week", "month"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => {
-                      setRange({ from: null, to: null }); // Clear custom range
-                      setDateFilter(f);
-                    }}
-                    className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-                      dateFilter === f
-                        ? "bg-blue-600 text-white shadow-xs"
-                        : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
-                    }`}
-                  >
-                    {f.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-
-              {/* Right Section: View Toggle + Export Button */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* View Toggle Buttons */}
-                <div className="flex items-center gap-1 rounded-xl bg-slate-100/90 p-1">
-                  <button
-                    onClick={() => setView("work")}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                      view === "work"
-                        ? "bg-white text-slate-900 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Work Sessions
-                  </button>
-
-                  <button
-                    onClick={() => setView("project")}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                      view === "project"
-                        ? "bg-white text-slate-900 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Project
-                  </button>
-                </div>
-
-                {/* Export CSV Button */}
+              {["today", "week", "month"].map((f) => (
                 <button
-                  onClick={() => exportCSV(filteredGroupedSessions)}
-                  className="rounded-xl bg-blue-600 hover:bg-blue-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition cursor-pointer"
+                  key={f}
+                  type="button"
+                  onClick={() => {
+                    setRange({ from: null, to: null });
+                    setDateFilter(f);
+                  }}
+                  className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                    dateFilter === f && !range.from
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
+                  }`}
                 >
-                  ⬇ Export CSV
+                  {f.toUpperCase()}
                 </button>
-              </div>
+              ))}
             </div>
 
-            {/* 🔹 VIEW TOGGLE */}
-            {view === "work" && (
-              <div className="border-t border-slate-100 bg-slate-50/40 p-4 flex-1 flex flex-col rounded-b-2xl">
-                <div className="flex-1 max-h-[56vh] min-h-[360px] overflow-auto rounded-xl border border-slate-200/90 bg-white shadow-2xs flex flex-col">
-          <table className="w-full text-sm table-fixed border-separate border-spacing-0 flex-1">
-            <thead className="sticky top-0 z-20 bg-white border-b border-gray-200 text-xs font-bold uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-3 text-left w-[130px] sm:w-[150px]">
-                  Company / Category
-                </th>
-                <th className="px-4 py-3 text-left w-[220px] sm:w-[260px]">
-                  Project & Task
-                </th>
-                <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
-                  Work Type
-                </th>
-                <th className="px-4 py-3 text-left w-[100px] sm:w-[110px]">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left w-[110px] sm:w-[120px]">
-                  Total Time
-                </th>
-                <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
-                  Date
-                </th>
-                <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
-                  Logs
-                </th>
-              </tr>
-            </thead>
+            {/* Right: View Toggle & Export */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* View Switcher */}
+              <div className="flex items-center gap-1 rounded-xl bg-slate-100/90 p-1">
+                <button
+                  type="button"
+                  onClick={() => setView("work")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    view === "work"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Activity size={13} />
+                  <span>Work Sessions</span>
+                </button>
 
-            <tbody className="[&_tr]:border-t">
-              {(!filteredGroupedSessions || filteredGroupedSessions.length === 0) && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-24 text-center">
-                    <div className="inline-flex flex-col items-center gap-2 text-gray-500">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-xs">
-                        🗓️
-                      </div>
-                      <span className="text-base font-bold text-slate-800">No sessions found for this period</span>
-                      <span className="text-xs text-slate-400 max-w-sm">
-                        Choose a date range using the picker above or start a session to see your activity logs here.
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setView("project")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    view === "project"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <FolderKanban size={13} />
+                  <span>Project Summary</span>
+                </button>
+              </div>
 
-              {filteredGroupedSessions.map((p) => {
-                const isRowActive = p.status === "active";
-                const isRowPaused = p.status === "paused";
-                const rowLiveMinutes = isRowActive && activeSession
-                  ? Math.max(p.totalMinutes, elapsed / 60000)
-                  : p.totalMinutes;
+              {/* Export CSV */}
+              <button
+                type="button"
+                onClick={() => exportCSV(filteredGroupedSessions)}
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 text-xs font-bold shadow-xs transition cursor-pointer"
+                title="Download CSV report"
+              >
+                <Download size={13} />
+                <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
 
-                return (
-                  <React.Fragment key={p.key}>
-                    <tr className={`transition ${
-                      isRowActive 
-                        ? "bg-emerald-50/40 hover:bg-emerald-50/70" 
-                        : isRowPaused 
-                        ? "bg-amber-50/30 hover:bg-amber-50/50" 
-                        : "even:bg-gray-50/60 hover:bg-blue-50/40"
-                    }`}>
-                      {/* Company & Category */}
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-800 truncate" title={p.companyName}>
-                          {p.companyName}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate" title={p.categoryName}>
-                          {p.categoryName}
-                        </div>
-                      </td>
-
-                      {/* Project & Task Title */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-sm shrink-0">{p.customTask ? "💼" : "📁"}</span>
-                          <span className="font-bold text-slate-900 truncate" title={p.projectName || p.customTask}>
-                            {p.projectName || p.customTask || "—"}
-                          </span>
-                          {p.customTask && (
-                            <span className="shrink-0 inline-flex items-center rounded-full bg-purple-50 border border-purple-200 px-1.5 py-0.2 text-[9px] font-bold text-purple-700">
-                              Custom
-                            </span>
-                          )}
-                        </div>
-                        {p.taskTitle && p.taskTitle !== (p.projectName || p.customTask) && (
-                          <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 truncate max-w-full" title={p.taskTitle}>
-                            <span>🎯</span>
-                            <span className="truncate">{p.taskTitle}</span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Work Type */}
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                          {p.taskType}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        {isRowActive ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 animate-pulse shadow-xs">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
-                            Running
-                          </span>
-                        ) : isRowPaused ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow-xs">
-                            ❚❚ Paused
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                            ✓ Stopped
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Live Total Time */}
-                      <td className="px-4 py-3">
-                        <div className={`font-mono text-sm font-bold tracking-tight ${
-                          isRowActive ? "text-emerald-700" : "text-slate-900"
-                        }`}>
-                          {minutesToHHMM(rowLiveMinutes)}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {Math.round(rowLiveMinutes || 0)}m total
-                        </div>
-                      </td>
-
-                      {/* Date */}
-                      <td className="px-4 py-3 text-xs text-slate-600">{p.date}</td>
-
-                      {/* Logs */}
-                      <td className="px-4 py-3">
-                        {p.segments.length > 0 && (
-                          <button
-                            onClick={() =>
-                              setExpanded((prev) => ({
-                                ...prev,
-                                [p.key]: !prev[p.key],
-                              }))
-                            }
-                            className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-100"
-                          >
-                            {expanded[p.key]
-                              ? "Hide"
-                              : `Logs (${p.segments.length})`}
-                          </button>
-                        )}
-                      </td>
+          {/* VIEW: Work Sessions */}
+          {view === "work" && (
+            <div className="bg-slate-50/40 p-4 flex-1 flex flex-col">
+              <div className="flex-1 max-h-[56vh] min-h-[360px] overflow-auto rounded-2xl border border-slate-200/90 bg-white shadow-2xs flex flex-col">
+                <table className="w-full text-sm table-fixed border-separate border-spacing-0 flex-1">
+                  <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left w-[140px] sm:w-[160px]">
+                        Company / Category
+                      </th>
+                      <th className="px-4 py-3 text-left w-[220px] sm:w-[260px]">
+                        Project & Task
+                      </th>
+                      <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
+                        Work Type
+                      </th>
+                      <th className="px-4 py-3 text-left w-[100px] sm:w-[110px]">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left w-[110px] sm:w-[120px]">
+                        Total Time
+                      </th>
+                      <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 text-left w-[90px] sm:w-[100px]">
+                        Logs
+                      </th>
                     </tr>
+                  </thead>
 
-                    {/* Logs Details */}
-                    {expanded[p.key] && (
-                      <tr className="bg-slate-50">
-                        <td colSpan={7} className="px-6 py-3">
-                          <div className="text-xs font-semibold text-gray-600 mb-1">
-                            Time Logs for {p.projectName}
+                  <tbody className="divide-y divide-slate-100">
+                    {(!filteredGroupedSessions || filteredGroupedSessions.length === 0) && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-24 text-center">
+                          <div className="inline-flex flex-col items-center gap-2.5 text-slate-500">
+                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
+                              <Clock size={28} />
+                            </div>
+                            <span className="text-base font-bold text-slate-800">
+                              No sessions found for this period
+                            </span>
+                            <span className="text-xs text-slate-400 max-w-sm">
+                              Choose another date range using the picker above or start a new work session to see your activity logs here.
+                            </span>
                           </div>
-                          <ul className="space-y-1 text-xs font-mono text-gray-700">
-                            {p.segments.map((seg, i) => (
-                              <li key={i}>
-                                • {new Date(seg.start).toLocaleTimeString()} →{" "}
-                                {seg.end ? new Date(seg.end).toLocaleTimeString() : "Running now..."}
-                              </li>
-                            ))}
-                          </ul>
                         </td>
                       </tr>
                     )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
 
-    {view === "project" && (
-      <div className="border-t border-slate-100 bg-slate-50/60 p-4 flex-1 flex flex-col rounded-b-3xl">
-        <div className="flex-1 min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col">
-          <h3 className="text-lg font-bold text-slate-900 mb-3">
-            Project – Work Summary
-          </h3>
+                    {filteredGroupedSessions.map((p) => {
+                      const isRowActive = p.status === "active";
+                      const isRowPaused = p.status === "paused";
+                      const rowLiveMinutes = isRowActive && activeSession
+                        ? Math.max(p.totalMinutes, elapsed / 60000)
+                        : p.totalMinutes;
 
-          {projectSummary.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center py-20 text-center">
-              <div className="inline-flex flex-col items-center gap-2 text-gray-500">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-xs">
-                  📁
-                </div>
-                <span className="text-base font-bold text-slate-800">No project work found</span>
-                <span className="text-xs text-slate-400">
-                  Logged project sessions will be summarized here once completed.
-                </span>
+                      return (
+                        <React.Fragment key={p.key}>
+                          <tr
+                            className={`transition-colors ${
+                              isRowActive
+                                ? "bg-emerald-50/50 hover:bg-emerald-50/80"
+                                : isRowPaused
+                                ? "bg-amber-50/40 hover:bg-amber-50/70"
+                                : "hover:bg-slate-50/80"
+                            }`}
+                          >
+                            {/* Company & Category */}
+                            <td className="px-4 py-3.5">
+                              <div className="font-semibold text-slate-900 truncate text-xs" title={p.companyName}>
+                                {p.companyName || "—"}
+                              </div>
+                              <div className="text-[11px] text-slate-400 truncate mt-0.5" title={p.categoryName}>
+                                {p.categoryName || "—"}
+                              </div>
+                            </td>
+
+                            {/* Project & Task */}
+                            <td className="px-4 py-3.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-slate-400 shrink-0">
+                                  {p.customTask ? <Briefcase size={14} className="text-purple-600" /> : <FolderKanban size={14} className="text-blue-600" />}
+                                </span>
+                                <span className="font-bold text-slate-900 truncate text-xs" title={p.projectName || p.customTask}>
+                                  {p.projectName || p.customTask || "—"}
+                                </span>
+                                {p.customTask && (
+                                  <span className="shrink-0 inline-flex items-center rounded-md bg-purple-50 border border-purple-200/80 px-1.5 py-0.5 text-[9px] font-bold text-purple-700">
+                                    Custom
+                                  </span>
+                                )}
+                              </div>
+                              {p.taskTitle && p.taskTitle !== (p.projectName || p.customTask) && (
+                                <div
+                                  className="mt-1 inline-flex items-center gap-1 rounded-md bg-blue-50 border border-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 truncate max-w-full"
+                                  title={p.taskTitle}
+                                >
+                                  <span>🎯</span>
+                                  <span className="truncate">{p.taskTitle}</span>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Work Type */}
+                            <td className="px-4 py-3.5">
+                              <span className="inline-flex items-center rounded-lg bg-slate-100 border border-slate-200/60 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                                {p.taskType || "—"}
+                              </span>
+                            </td>
+
+                            {/* Status */}
+                            <td className="px-4 py-3.5">
+                              {isRowActive ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100/80 border border-emerald-300 px-2.5 py-1 text-[11px] font-bold text-emerald-800 animate-pulse">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
+                                  Running
+                                </span>
+                              ) : isRowPaused ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100/80 border border-amber-300 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                                  <Pause size={10} className="fill-current" />
+                                  Paused
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                                  <CheckCircle2 size={11} className="text-slate-400" />
+                                  Stopped
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Live Total Time */}
+                            <td className="px-4 py-3.5">
+                              <div className={`font-mono text-sm font-extrabold tracking-tight ${
+                                isRowActive ? "text-emerald-700" : "text-slate-900"
+                              }`}>
+                                {minutesToHHMM(rowLiveMinutes)}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {Math.round(rowLiveMinutes || 0)}m total
+                              </div>
+                            </td>
+
+                            {/* Date */}
+                            <td className="px-4 py-3.5 text-xs font-medium text-slate-600">
+                              {p.date}
+                            </td>
+
+                            {/* Logs Button */}
+                            <td className="px-4 py-3.5">
+                              {p.segments && p.segments.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpanded((prev) => ({
+                                      ...prev,
+                                      [p.key]: !prev[p.key],
+                                    }))
+                                  }
+                                  className={`rounded-xl px-2.5 py-1 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                    expanded[p.key]
+                                      ? "bg-blue-600 text-white shadow-2xs"
+                                      : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100"
+                                  }`}
+                                >
+                                  <span>{p.segments.length} {p.segments.length === 1 ? "log" : "logs"}</span>
+                                  {expanded[p.key] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+
+                          {/* Logs Timeline Expansion Drawer */}
+                          {expanded[p.key] && (
+                            <tr className="bg-slate-50/90 border-t border-slate-200/80">
+                              <td colSpan={7} className="px-6 py-4">
+                                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
+                                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+                                    <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                                      <History size={14} className="text-blue-600" />
+                                      <span>Session Segments Timeline for {p.projectName || p.customTask}</span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-400 font-mono">
+                                      {p.segments.length} recorded intervals
+                                    </span>
+                                  </div>
+
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {p.segments.map((seg, i) => {
+                                      const segStart = new Date(seg.start);
+                                      const segEnd = seg.end ? new Date(seg.end) : null;
+                                      const segDurMs = segEnd ? segEnd.getTime() - segStart.getTime() : Date.now() - segStart.getTime();
+
+                                      return (
+                                        <div
+                                          key={i}
+                                          className="rounded-lg border border-slate-100 bg-slate-50/70 p-2.5 text-xs flex items-center justify-between"
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0"></span>
+                                            <div className="font-mono text-slate-700 truncate">
+                                              <span className="font-semibold">{segStart.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                                              <span className="mx-1 text-slate-400">→</span>
+                                              <span className="text-slate-600">
+                                                {segEnd ? segEnd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Running now..."}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
+                                            {minutesToHHMM(segDurMs / 60000)}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ) : (
-            <table className="w-full text-sm table-fixed border-collapse">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-3 py-2 text-left">Project</th>
-                  <th className="px-3 py-2 text-left">Work Type</th>
-                  <th className="px-3 py-2 text-left">Total Hours</th>
-                  <th className="px-3 py-2 text-left">Details</th>
-                </tr>
-              </thead>
+          )}
 
-              <tbody>
-                {projectSummary.map((p) => {
-                  const rowKey = `${p.projectName}|${p.taskType}`;
-                  const isExpanded = expandedProject === rowKey;
+          {/* VIEW: Project Summary */}
+          {view === "project" && (
+            <div className="bg-slate-50/40 p-4 flex-1 flex flex-col">
+              <div className="flex-1 min-h-[360px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs flex flex-col">
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Project – Cumulative Summary
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Aggregated work hours grouped by project and work type
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {projectSummary.length} Projects
+                  </span>
+                </div>
 
-                  return (
-                    <React.Fragment key={rowKey}>
-                      <tr className="border-t hover:bg-blue-50/40 transition">
-                        <td className="px-3 py-2 font-medium">
-                          {p.projectName}
-                        </td>
-                        <td className="px-3 py-2">{p.taskType}</td>
-                        <td className="px-3 py-2 font-semibold text-slate-900">
-                          {minutesToHHMM(p.totalMinutes)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <button
-                            className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-100 cursor-pointer"
-                            onClick={() =>
-                              setExpandedProject(isExpanded ? null : rowKey)
-                            }
-                          >
-                            {isExpanded ? "Hide details" : "View details"}
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* Day-wise details */}
-                      {isExpanded && (
-                        <tr className="bg-slate-50">
-                          <td colSpan={4} className="px-4 py-3">
-                            <div className="text-sm font-medium mb-2">
-                              Day-wise work – {p.projectName} ({p.taskType})
-                            </div>
-
-                            <table className="w-full text-xs overflow-hidden rounded-xl border">
-                              <thead className="bg-slate-100">
-                                <tr>
-                                  <th className="px-2 py-1 text-left">Date</th>
-                                  <th className="px-2 py-1 text-left">
-                                    Total Hours
-                                  </th>
-                                </tr>
-                              </thead>
-
-                              <tbody>
-                                {projectDailyBreakdown
-                                  .filter(
-                                    (d) =>
-                                      d.projectName === p.projectName &&
-                                      d.taskType === p.taskType,
-                                  )
-                                  .map((d, idx) => (
-                                    <tr key={idx} className="border-t">
-                                      <td className="px-2 py-1">{d.date}</td>
-                                      <td className="px-2 py-1">
-                                        {minutesToHHMM(d.totalMinutes)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                              </tbody>
-                            </table>
-                          </td>
+                {projectSummary.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center py-20 text-center">
+                    <div className="inline-flex flex-col items-center gap-2 text-slate-500">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
+                        <FolderKanban size={28} />
+                      </div>
+                      <span className="text-base font-bold text-slate-800">No project work found</span>
+                      <span className="text-xs text-slate-400">
+                        Logged project sessions will be summarized here once completed.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-sm table-fixed border-collapse">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Project</th>
+                          <th className="px-4 py-3 text-left">Work Type</th>
+                          <th className="px-4 py-3 text-left">Total Hours</th>
+                          <th className="px-4 py-3 text-left">Breakdown</th>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100">
+                        {projectSummary.map((p) => {
+                          const rowKey = `${p.projectName}|${p.taskType}`;
+                          const isExpanded = expandedProject === rowKey;
+
+                          return (
+                            <React.Fragment key={rowKey}>
+                              <tr className="hover:bg-slate-50/80 transition-colors">
+                                <td className="px-4 py-3.5 font-bold text-slate-900 text-xs flex items-center gap-2">
+                                  <FolderKanban size={14} className="text-blue-600 shrink-0" />
+                                  <span className="truncate">{p.projectName}</span>
+                                </td>
+                                <td className="px-4 py-3.5">
+                                  <span className="inline-flex items-center rounded-lg bg-slate-100 border border-slate-200/60 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                                    {p.taskType}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3.5 font-mono font-extrabold text-slate-900 text-sm">
+                                  {minutesToHHMM(p.totalMinutes)}
+                                </td>
+                                <td className="px-4 py-3.5">
+                                  <button
+                                    type="button"
+                                    className={`rounded-xl px-3 py-1 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      isExpanded
+                                        ? "bg-blue-600 text-white shadow-2xs"
+                                        : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100"
+                                    }`}
+                                    onClick={() =>
+                                      setExpandedProject(isExpanded ? null : rowKey)
+                                    }
+                                  >
+                                    <span>{isExpanded ? "Hide breakdown" : "View breakdown"}</span>
+                                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                  </button>
+                                </td>
+                              </tr>
+
+                              {/* Day-wise breakdown */}
+                              {isExpanded && (
+                                <tr className="bg-slate-50/90 border-t border-slate-200">
+                                  <td colSpan={4} className="px-6 py-4">
+                                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
+                                      <div className="text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
+                                        <Calendar size={13} className="text-blue-600" />
+                                        <span>Day-wise Work Breakdown: {p.projectName} ({p.taskType})</span>
+                                      </div>
+
+                                      <table className="w-full text-xs overflow-hidden rounded-xl border border-slate-200">
+                                        <thead className="bg-slate-100/90 border-b border-slate-200 text-slate-600 font-bold">
+                                          <tr>
+                                            <th className="px-3 py-2 text-left">Date</th>
+                                            <th className="px-3 py-2 text-left">Total Hours</th>
+                                          </tr>
+                                        </thead>
+
+                                        <tbody className="divide-y divide-slate-100">
+                                          {projectDailyBreakdown
+                                            .filter(
+                                              (d) =>
+                                                d.projectName === p.projectName &&
+                                                d.taskType === p.taskType,
+                                            )
+                                            .map((d, idx) => (
+                                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-3 py-2 font-medium text-slate-700">{d.date}</td>
+                                                <td className="px-3 py-2 font-mono font-bold text-slate-900">
+                                                  {minutesToHHMM(d.totalMinutes)}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
-      </div>
-    )}
-  </div>
-</div>
     </div>
   );
 }
