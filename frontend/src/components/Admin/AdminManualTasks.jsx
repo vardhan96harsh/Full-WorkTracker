@@ -57,9 +57,9 @@ export default function AdminManualTasks({ auth }) {
   useEffect(() => {
     async function loadUsers() {
       try {
-        const list = await api("/api/users", { token: auth.token });
+        const list = await api("/api/users?status=active", { token: auth.token });
         const sorted = (list || [])
-          .filter((u) => u.role !== "admin")
+          .filter((u) => u.role !== "admin" && u.status !== "inactive")
           .sort((a, b) =>
             (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
           );
@@ -144,10 +144,13 @@ export default function AdminManualTasks({ auth }) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
+    const taskName = remark.projectName || remark.customTask || "Manual task";
+    const remarkNote = remark.text ? `\nRemark: "${remark.text}"` : "";
+
     setConfirmState({
       open: true,
       title: "Approve Manual Time Request",
-      message: `Approve manual time request for ${remark.userName}?\n\nTask: ${remark.projectName || remark.customTask || "Manual task"}\nTime: ${formatMinutes(remark.requestedMinutes)} (${remark.requestedMinutes} min)`,
+      message: `Approve manual time request for ${remark.userName}?\n\nTask: ${taskName}${remarkNote}\nTime: ${formatMinutes(remark.requestedMinutes)} (${remark.requestedMinutes} min)`,
       confirmLabel: "Approve Request",
       danger: false,
       onConfirm: async () => {
@@ -177,10 +180,13 @@ export default function AdminManualTasks({ auth }) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
+    const taskName = remark.projectName || remark.customTask || "Manual task";
+    const remarkNote = remark.text ? `\nRemark: "${remark.text}"` : "";
+
     setConfirmState({
       open: true,
       title: "Reject Manual Time Request",
-      message: `Reject manual time request for ${remark.userName}?\n\nThis will lock the request as rejected.`,
+      message: `Reject manual time request for ${remark.userName}?\n\nTask: ${taskName}${remarkNote}\n\nThis will lock the request as rejected.`,
       confirmLabel: "Reject Request",
       danger: true,
       onConfirm: async () => {
@@ -529,10 +535,16 @@ export default function AdminManualTasks({ auth }) {
                     </td>
 
                     {/* Task / Remark */}
-                    <td className="px-5 py-4 max-w-xs text-xs font-medium text-slate-700">
-                      <p className="line-clamp-2">
-                        {r.text || r.customTask || "No remark"}
-                      </p>
+                    <td className="px-5 py-4 min-w-[240px] max-w-lg text-xs font-medium text-slate-700">
+                      {r.customTask && (
+                        <div className="mb-1 font-bold text-slate-900 break-words">
+                          <span className="text-slate-500 font-semibold">Task: </span>
+                          {r.customTask}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words leading-relaxed text-slate-800">
+                        {r.text || (r.customTask ? "" : "No remark")}
+                      </div>
                     </td>
 
                     {/* Requested Time */}

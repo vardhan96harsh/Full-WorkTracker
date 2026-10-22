@@ -1,6 +1,6 @@
 // frontend/src/components/Admin/AdminDailyReport.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { AlertCircle, Clock, Pause, ArrowRight } from "lucide-react";
 import { api } from "../../api.js";
 
 // Modularized Subcomponents & Utilities
@@ -16,6 +16,8 @@ import RawSessionTable from "./DailyReport/RawSessionTable.jsx";
 import CompanyHoursTable from "./DailyReport/CompanyHoursTable.jsx";
 import ProjectHoursTable from "./DailyReport/ProjectHoursTable.jsx";
 import UserHoursTable from "./DailyReport/UserHoursTable.jsx";
+import PausedSessionsReport from "./DailyReport/PausedSessionsReport.jsx";
+import LiveUserStatusReport from "./DailyReport/LiveUserStatusReport.jsx";
 
 export default function AdminDailyReport({ auth }) {
   /* ---------- state ---------- */
@@ -40,9 +42,12 @@ export default function AdminDailyReport({ auth }) {
     machine: "",
   });
 
-  // Tabs: "raw" | "company" | "project" | "user"
+  // Tabs: "liveStatus" | "raw" | "company" | "project" | "user" | "paused"
   const [tab, setTab] = useState("raw");
   const [tableSearch, setTableSearch] = useState("");
+  const [pausedCount, setPausedCount] = useState(0);
+  const [liveOnlineCount, setLiveOnlineCount] = useState(0);
+  const [liveOfflineCount, setLiveOfflineCount] = useState(0);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -60,18 +65,61 @@ export default function AdminDailyReport({ auth }) {
     setTimeout(() => setToastMsg(""), 4000);
   }
 
+  /* ---------- paused alerts count polling ---------- */
+  const checkPausedCount = useCallback(async () => {
+    if (!auth?.token) return;
+    try {
+      const res = await api("/api/work-sessions/admin/paused-alerts?minMinutes=10", {
+        token: auth.token,
+      });
+      if (res && typeof res.count === "number") {
+        setPausedCount(res.count);
+      }
+    } catch {
+      // Quiet fail on network hiccups
+    }
+  }, [auth?.token]);
+
+  useEffect(() => {
+    checkPausedCount();
+    const interval = setInterval(checkPausedCount, 25000);
+    return () => clearInterval(interval);
+  }, [checkPausedCount]);
+
+  /* ---------- live employee status count polling ---------- */
+  const checkLiveStatusCount = useCallback(async () => {
+    if (!auth?.token) return;
+    try {
+      const res = await api("/api/work-sessions/admin/live-status", {
+        token: auth.token,
+      });
+      if (res && res.summary) {
+        setLiveOnlineCount(res.summary.onlineCount || 0);
+        setLiveOfflineCount(res.summary.offlineCount || 0);
+      }
+    } catch {
+      // Quiet fail on network hiccups
+    }
+  }, [auth?.token]);
+
+  useEffect(() => {
+    checkLiveStatusCount();
+    const interval = setInterval(checkLiveStatusCount, 20000);
+    return () => clearInterval(interval);
+  }, [checkLiveStatusCount]);
+
   /* ---------- masters ---------- */
   async function loadMasters() {
     const [c, g, u] = await Promise.all([
       api("/api/companies", { token: auth.token }),
       api("/api/categories", { token: auth.token }),
-      api("/api/users", { token: auth.token }),
+      api("/api/users?status=active", { token: auth.token }),
     ]);
     setCompanies(c || []);
     setCategories(g || []);
     setUsers(
       (u || [])
-        .filter((x) => x.role !== "admin")
+        .filter((x) => x.role !== "admin" && x.status !== "inactive")
         .map((x) => ({ ...x, _id: x._id ?? x.id }))
         .sort((a, b) => a.name.localeCompare(b.name))
     );
@@ -139,6 +187,39 @@ export default function AdminDailyReport({ auth }) {
     loadRaw();
   }, [from, to, filters.company, filters.category, filters.project, filters.user, filters.machine]);
 
+  /* ---------- HELPER: UNIFIED PROJECT / CUSTOM TASK IDENTIFIER ---------- */
+  function getProjectIdentifiers(r) {
+    if (r.projectId) {
+      return {
+        pid: String(r.projectId),
+        pname: r.projectName && r.projectName !== "—" ? r.projectName : "Unnamed Project",
+        isCustom: false,
+      };
+    }
+
+    // For custom tasks/projects without a database projectId:
+    const rawCustom =
+      r.customTask?.trim() ||
+      (r.projectName && r.projectName !== "—" && r.projectName !== "(Custom Task)" ? r.projectName.trim() : null) ||
+      (r.taskTitle && r.taskTitle !== "none" ? r.taskTitle.trim() : null);
+
+    if (rawCustom) {
+      const cleanId = rawCustom.toLowerCase().replace(/\s+/g, "_");
+      const displayName = rawCustom.startsWith("(Custom)") ? rawCustom : `(Custom) ${rawCustom}`;
+      return {
+        pid: `custom_${cleanId}`,
+        pname: displayName,
+        isCustom: true,
+      };
+    }
+
+    return {
+      pid: "custom_general",
+      pname: "(Custom Task)",
+      isCustom: true,
+    };
+  }
+
   /* ---------- KPI METRICS ---------- */
   const kpis = useMemo(() => {
     const totalMinutes = (rows || []).reduce((acc, r) => acc + (r.totalMinutes || 0), 0);
@@ -146,7 +227,7 @@ export default function AdminDailyReport({ auth }) {
       (rows || []).map((r) => r.companyName).filter((c) => c && c !== "—")
     ).size;
     const uniqueProjects = new Set(
-      (rows || []).map((r) => r.projectName).filter((p) => p && p !== "—")
+      (rows || []).map((r) => getProjectIdentifiers(r).pid)
     ).size;
     const uniqueUsers = new Set(
       (rows || []).map((r) => r.userId).filter(Boolean)
@@ -192,12 +273,12 @@ export default function AdminDailyReport({ auth }) {
         g.pcs.add(pc);
       }
 
-      const pid = r.projectId || "unknown";
+      const { pid, pname } = getProjectIdentifiers(r);
       const projKey = `${pid}_${r.taskId || r.taskTitle || "none"}`;
 
       if (!g.projects[projKey]) {
         g.projects[projKey] = {
-          projectName: r.projectName || (r.customTask ? "(Custom Task)" : "—"),
+          projectName: pname,
           taskTitle: r.taskTitle || (r.customTask ? r.customTask : null),
           totalMinutes: 0,
           sessions: [],
@@ -241,8 +322,7 @@ export default function AdminDailyReport({ auth }) {
 
     for (const r of rows || []) {
       const cname = r.companyName && r.companyName !== "—" ? r.companyName : "General / Internal";
-      const pid = r.projectId || "custom";
-      const pname = r.projectName || (r.customTask ? "(Custom Task)" : "General Project");
+      const { pid, pname } = getProjectIdentifiers(r);
       const uid = r.userId || r.userName || "unknown";
       const uname = r.userName || "Unknown";
 
@@ -322,8 +402,7 @@ export default function AdminDailyReport({ auth }) {
       const user = map.get(r.userId);
       user.totalMinutes += r.totalMinutes || 0;
 
-      const pid = r.projectId || "custom";
-      const pname = r.projectName || "(Custom Task)";
+      const { pid, pname } = getProjectIdentifiers(r);
 
       if (!user.projects.has(pid)) {
         user.projects.set(pid, {
@@ -358,10 +437,9 @@ export default function AdminDailyReport({ auth }) {
     const map = new Map();
 
     for (const r of rows || []) {
-      const pid = r.projectId || "custom";
-      const pname = r.projectName || "(Custom Task)";
-      const cname = r.companyName || "—";
-      const uid = r.userId || r.userName;
+      const { pid, pname } = getProjectIdentifiers(r);
+      const cname = r.companyName && r.companyName !== "—" ? r.companyName : "General / Internal";
+      const uid = r.userId || r.userName || "unknown";
       const uname = r.userName || "—";
 
       if (!map.has(pid)) {
@@ -426,10 +504,13 @@ export default function AdminDailyReport({ auth }) {
     exportByUserCSVUtil({ byUserWithProjects, unit, from, to, showToast });
 
   const tabCounts = {
+    liveOnline: liveOnlineCount,
+    liveOffline: liveOfflineCount,
     raw: grouped.length,
     company: companiesTree.length,
     project: projectsTree.length,
     user: byUserWithProjects.length,
+    paused: pausedCount,
   };
 
   return (
@@ -448,6 +529,36 @@ export default function AdminDailyReport({ auth }) {
         kpis={kpis}
       />
 
+      {/* Compact Minimalist Paused Session Alert Strip */}
+      {pausedCount > 0 && tab !== "paused" && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3.5 py-2 rounded-xl bg-amber-50/80 border border-amber-200/90 text-amber-950 shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800 border border-amber-200/60">
+              <Pause className="h-3.5 w-3.5" />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+              <span className="font-bold text-slate-900">
+                {pausedCount} {pausedCount === 1 ? "Session" : "Sessions"} Paused ≥ 10m
+              </span>
+              <span className="hidden sm:inline text-slate-300">•</span>
+              <span className="text-[11px] text-slate-600">
+                Staff on extended pause (excl. 2–3 PM lunch)
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setTab("paused")}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition cursor-pointer shadow-2xs shrink-0 self-start sm:self-auto"
+          >
+            <span>View Paused List</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
+
+
       {/* Filter Control Box & Tab Switcher */}
       <ReportFilterToolbar
         filters={filters}
@@ -463,6 +574,22 @@ export default function AdminDailyReport({ auth }) {
         setTab={setTab}
         tabCounts={tabCounts}
       />
+
+      {/* TAB 0: LIVE USERS (ONLINE / OFFLINE REALTIME STATUS) */}
+      {tab === "liveStatus" && (
+        <LiveUserStatusReport
+          auth={auth}
+          unit={unit}
+          onSelectUserForRaw={(userId) => {
+            setFilters((prev) => ({ ...prev, user: userId }));
+            setTab("raw");
+          }}
+          onOnlineCountChange={(online, offline) => {
+            setLiveOnlineCount(online);
+            setLiveOfflineCount(offline);
+          }}
+        />
+      )}
 
       {/* TAB 1: RAW SESSIONS */}
       {tab === "raw" && (
@@ -511,6 +638,16 @@ export default function AdminDailyReport({ auth }) {
           expandedUser={expandedUser}
           setExpandedUser={setExpandedUser}
           exportByUserCSV={exportByUserCSV}
+        />
+      )}
+
+      {/* TAB 5: PAUSED SESSIONS (>= 10 MIN & PAUSE LOGS) */}
+      {tab === "paused" && (
+        <PausedSessionsReport
+          auth={auth}
+          from={from}
+          to={to}
+          onCountChange={setPausedCount}
         />
       )}
 

@@ -40,38 +40,125 @@ async function getApiBase() {
 /**
  * Perform silent token refresh using stored refreshToken.
  * Deduplicates simultaneous refresh requests with a singleton promise.
+ * 🔒 NEVER logs out the user on network errors or server hiccups;
+ * only logs out if server definitively rejects credentials (401/403).
  */
 async function getRefreshedToken() {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
+    let isDefinitiveAuthFailure = false;
+
+    // Helper: Attempt silent re-authentication with remembered credentials if available
+    async function trySavedCredentialsLogin(baseUrl) {
+      try {
+        const savedEmail = localStorage.getItem("email");
+        const savedPassword = localStorage.getItem("password");
+        if (!savedEmail || !savedPassword) return null;
+
+        const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: savedEmail, password: savedPassword }),
+        });
+
+        if (loginRes.ok) {
+          const data = await loginRes.json();
+          if (data?.token) {
+            const updatedAuth = {
+              token: data.token,
+              refreshToken: data.refreshToken,
+              user: data.user,
+            };
+            localStorage.setItem("auth", JSON.stringify(updatedAuth));
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("auth:refreshed", { detail: updatedAuth })
+              );
+            }
+            return updatedAuth.token;
+          }
+        }
+      } catch (e) {
+        console.warn("Silent re-login attempt error:", e.message);
+      }
+      return null;
+    }
+
     try {
+      const base = await getApiBase();
       const stored = localStorage.getItem("auth");
-      if (!stored) throw new Error("No auth stored");
+      if (!stored) {
+        const recoveredToken = await trySavedCredentialsLogin(base);
+        if (recoveredToken) return recoveredToken;
+        isDefinitiveAuthFailure = true;
+        throw new Error("No auth stored");
+      }
 
       let authObj;
       try {
         authObj = JSON.parse(stored);
       } catch {
+        const recoveredToken = await trySavedCredentialsLogin(base);
+        if (recoveredToken) return recoveredToken;
+        isDefinitiveAuthFailure = true;
         throw new Error("Invalid stored auth JSON");
       }
 
       const refreshToken = authObj?.refreshToken;
-      if (!refreshToken) throw new Error("No refresh token available");
+      if (!refreshToken) {
+        // No refresh token stored (legacy session) -> attempt recovery with saved credentials
+        const recoveredToken = await trySavedCredentialsLogin(base);
+        if (recoveredToken) return recoveredToken;
+        isDefinitiveAuthFailure = true;
+        throw new Error("No refresh token available");
+      }
 
-      const base = await getApiBase();
-      const res = await fetch(`${base}/api/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
+      // Attempt refresh with a 1-time retry for transient network recovery (e.g. waking from sleep)
+      let res;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await fetch(`${base}/api/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+          });
+          break; // Request completed, break retry loop
+        } catch (fetchErr) {
+          if (attempt === 0) {
+            // Wait 1.2s and retry once in case network is reconnecting after sleep/wake
+            await new Promise((r) => setTimeout(r, 1200));
+            continue;
+          }
+          // Network is still down; mark as offline network error, NOT auth rejection
+          const netErr = new Error(`Cannot connect to server during token refresh: ${fetchErr.message}`);
+          netErr.isOffline = true;
+          netErr.status = 0;
+          throw netErr;
+        }
+      }
 
-      if (!res.ok) {
+      // If server returned 401 (Invalid/expired refresh token) or 403 (User inactive/forbidden)
+      if (res.status === 401 || res.status === 403) {
+        // Attempt recovery with saved credentials before kicking user out
+        const recoveredToken = await trySavedCredentialsLogin(base);
+        if (recoveredToken) return recoveredToken;
+
+        isDefinitiveAuthFailure = true;
         throw new Error(`Refresh token rejected with status ${res.status}`);
+      }
+
+      // If server returned 5xx (temporary server hiccup), DO NOT log out user!
+      if (!res.ok) {
+        const serverErr = new Error(`Server returned status ${res.status} during token refresh`);
+        serverErr.status = res.status;
+        serverErr.isServerError = true;
+        throw serverErr;
       }
 
       const data = await res.json();
       if (!data?.token) {
+        isDefinitiveAuthFailure = true;
         throw new Error("No access token returned from refresh");
       }
 
@@ -93,11 +180,17 @@ async function getRefreshedToken() {
 
       return updatedAuth.token;
     } catch (err) {
-      console.warn("Silent token refresh failed:", err.message);
-      localStorage.removeItem("auth");
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("auth:expired"));
+      console.warn("Silent token refresh error:", err.message);
+
+      // 🔒 ONLY remove auth and trigger logout if server EXPLICITLY rejected credentials (401/403)
+      // or if auth storage is permanently corrupted. NEVER log out on network drop or server 5xx!
+      if (isDefinitiveAuthFailure) {
+        localStorage.removeItem("auth");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("auth:expired"));
+        }
       }
+
       throw err;
     } finally {
       refreshPromise = null;
@@ -113,10 +206,16 @@ export async function api(path, { method = "GET", body, token, headers, _isRetry
 
   // If token is not provided explicitly, try reading active token from stored auth
   let activeToken = token;
-  if (!activeToken && !path.includes("/api/auth/")) {
+  if (!path.includes("/api/auth/")) {
     try {
       const stored = localStorage.getItem("auth");
-      if (stored) activeToken = JSON.parse(stored)?.token;
+      if (stored) {
+        const storedToken = JSON.parse(stored)?.token;
+        // Prefer stored token to avoid stale closure tokens in long-running components
+        if (!activeToken || (storedToken && storedToken !== activeToken && !_isRetry)) {
+          activeToken = storedToken;
+        }
+      }
     } catch {}
   }
 
@@ -157,7 +256,15 @@ export async function api(path, { method = "GET", body, token, headers, _isRetry
         _isRetry: true,
       });
     } catch (refreshErr) {
-      // Refresh failed -> bubble session expired error
+      if (refreshErr?.isOffline || refreshErr?.isServerError || refreshErr?.status === 0) {
+        // Network or server issue -> bubble network error, preserve session & offline mode
+        const netErr = new Error("Network error during session refresh. Preserving offline state.");
+        netErr.status = 0;
+        netErr.isOffline = true;
+        throw netErr;
+      }
+
+      // Refresh failed definitively with 401/403 -> bubble session expired error
       const sessionError = new Error("Session expired. Please log in again.");
       sessionError.status = 401;
       sessionError.isAuthExpired = true;

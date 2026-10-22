@@ -192,47 +192,49 @@ export default function Categories({ auth }) {
   }, [items, q]);
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4">
+      {/* ── COMPACT HEADER BANNER ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3.5 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-              <Tags className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100 shadow-2xs">
+              <Tags className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-2xl font-bold tracking-tight text-slate-900">
-                Categories
-              </h3>
-              <p className="mt-0.5 text-sm text-slate-500">
-                Organize deliverables, modules, and work types across projects.
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold tracking-tight text-slate-900">
+                  Categories
+                </h3>
+                <span className="rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">
+                  {items.length} Total
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Organize deliverables, modules, and work types across projects
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-1.5 text-xs font-semibold text-slate-600">
-              <span className="font-bold text-slate-900">{items.length}</span> Total Categories
-            </div>
+          <div className="flex items-center gap-2">
             <button
               onClick={load}
               disabled={loading}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 cursor-pointer shadow-2xs"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              <span>Refresh</span>
             </button>
           </div>
         </div>
 
         {/* Global Notifications */}
         {errorMsg && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700">
+          <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-medium text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
             <span>{errorMsg}</span>
             <button
               onClick={() => setErrorMsg("")}
-              className="ml-auto text-red-500 hover:text-red-700"
+              className="ml-auto text-red-500 hover:text-red-700 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -240,12 +242,12 @@ export default function Categories({ auth }) {
         )}
 
         {successMsg && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-700">
+          <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-700">
             <Check className="h-4 w-4 shrink-0 text-emerald-600" />
             <span>{successMsg}</span>
             <button
               onClick={() => setSuccessMsg("")}
-              className="ml-auto text-emerald-500 hover:text-emerald-700"
+              className="ml-auto text-emerald-500 hover:text-emerald-700 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -253,93 +255,79 @@ export default function Categories({ auth }) {
         )}
       </div>
 
-      {/* Add Category & Search Bar */}
-      <div className="grid gap-4 md:grid-cols-12">
-        {/* Add Category Form */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-7">
-          <h4 className="mb-3 text-sm font-bold text-slate-900">Add New Category</h4>
-          <form onSubmit={add} className="flex gap-2">
+      {/* ── UNIFIED TABLE & ACTION TOOLBAR CARD ── */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
+        {/* Integrated Action Toolbar (Add + Search in single compact bar) */}
+        <div className="border-b border-slate-100 bg-slate-50/60 p-3 sm:px-4 sm:py-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          {/* Add Category Inline Form */}
+          <form onSubmit={add} className="flex items-center gap-2 flex-1 max-w-md">
             <div className="relative flex-1">
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Enter category name (e.g. E-Learning, ILT, Simulation)…"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
+                placeholder="Enter new category name (e.g. E-Learning, ILT)..."
+                className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
               />
             </div>
             <button
               type="submit"
               disabled={!name.trim() || loading}
-              className="inline-flex h-11 items-center gap-1.5 rounded-2xl bg-blue-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-bold text-white shadow-2xs transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer shrink-0"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               <span>Add</span>
             </button>
           </form>
-        </div>
 
-        {/* Search Filter */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-5">
-          <h4 className="mb-3 text-sm font-bold text-slate-900">Search Categories</h4>
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filter by name…"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-            />
-            {q && (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="relative w-full sm:w-60">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search categories..."
+                className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-8 pr-7 text-xs outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+              />
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => setQ("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
 
-      {/* Categories Table */}
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <h4 className="text-base font-bold text-slate-900">Registered Categories</h4>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
-              {filtered.length} {filtered.length === 1 ? "entry" : "entries"}
+            <span className="text-[11px] font-semibold text-slate-400 hidden sm:inline-block whitespace-nowrap">
+              {filtered.length} of {items.length}
             </span>
           </div>
-
-          {filtered.length !== items.length && (
-            <span className="text-xs text-slate-400">
-              Filtered from {items.length} total
-            </span>
-          )}
         </div>
 
+        {/* Categories Table */}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
               <tr>
-                <th className="w-16 px-5 py-3.5">#</th>
-                <th className="px-5 py-3.5">Category Name</th>
-                <th className="w-48 px-5 py-3.5 text-right">Actions</th>
+                <th className="w-14 px-4 py-2.5">#</th>
+                <th className="px-4 py-2.5">Category Name</th>
+                <th className="w-44 px-4 py-2.5 text-right">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-6 py-16 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                      <Tags className="h-6 w-6" />
+                  <td colSpan={3} className="px-6 py-12 text-center">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                      <Tags className="h-5 w-5" />
                     </div>
-                    <div className="mt-3 text-sm font-semibold text-slate-900">
+                    <div className="mt-2.5 text-xs font-bold text-slate-800">
                       No categories found
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-0.5 text-[11px] text-slate-500">
                       {q
                         ? "No categories match your search query."
                         : "No categories added yet. Create your first category above."}
@@ -359,12 +347,12 @@ export default function Categories({ auth }) {
                     }`}
                   >
                     {/* Index */}
-                    <td className="px-5 py-4 text-xs font-semibold text-slate-400">
+                    <td className="px-4 py-3 text-xs font-semibold text-slate-400">
                       {i + 1}
                     </td>
 
                     {/* Category Name / Edit Input */}
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       {isEditing ? (
                         <div className="flex items-center gap-2 max-w-md">
                           <input
@@ -377,15 +365,15 @@ export default function Categories({ auth }) {
                                 setEditName("");
                               }
                             }}
-                            className="h-9 w-full rounded-xl border border-blue-500 bg-white px-3 text-sm font-medium text-slate-900 outline-none ring-2 ring-blue-500/20"
+                            className="h-8.5 w-full rounded-xl border border-blue-500 bg-white px-3 text-xs font-medium text-slate-900 outline-none ring-2 ring-blue-500/20"
                           />
                         </div>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-700">
-                            <Tag className="h-4 w-4 text-slate-500" />
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
+                            <Tag className="h-3.5 w-3.5" />
                           </div>
-                          <span className="font-semibold text-slate-900">
+                          <span className="font-bold text-xs text-slate-900">
                             {it.name}
                           </span>
                         </div>
@@ -393,7 +381,7 @@ export default function Categories({ auth }) {
                     </td>
 
                     {/* Actions */}
-                    <td className="px-5 py-4 text-right">
+                    <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         {isEditing ? (
                           <>
@@ -401,9 +389,9 @@ export default function Categories({ auth }) {
                               type="button"
                               onClick={() => update(it._id)}
                               disabled={savingEdit || !editName.trim()}
-                              className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                             >
-                              <Check className="h-3.5 w-3.5" />
+                              <Check className="h-3 w-3" />
                               <span>Save</span>
                             </button>
                             <button
@@ -412,9 +400,9 @@ export default function Categories({ auth }) {
                                 setEditId(null);
                                 setEditName("");
                               }}
-                              className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 cursor-pointer"
                             >
-                              <X className="h-3.5 w-3.5" />
+                              <X className="h-3 w-3" />
                               <span>Cancel</span>
                             </button>
                           </>
@@ -426,17 +414,17 @@ export default function Categories({ auth }) {
                                 setEditId(it._id);
                                 setEditName(it.name);
                               }}
-                              className="inline-flex items-center gap-1 rounded-xl border border-blue-200/60 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                              className="inline-flex items-center gap-1 rounded-lg border border-blue-200/60 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 cursor-pointer"
                             >
-                              <Edit2 className="h-3.5 w-3.5" />
+                              <Edit2 className="h-3 w-3" />
                               <span>Edit</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => del(it)}
-                              className="inline-flex items-center gap-1 rounded-xl border border-red-200/60 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200/60 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100 cursor-pointer"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3 w-3" />
                               <span>Delete</span>
                             </button>
                           </>

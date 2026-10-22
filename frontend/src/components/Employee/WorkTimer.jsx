@@ -4,7 +4,7 @@ import DateRangePicker from "../../components/DateRangePicker";
 import { offlineManager } from "../../utils/offlineManager.js";
 import { Wifi, WifiOff, RefreshCw, FolderKanban } from "lucide-react";
 
-export default function WorkTimer({ auth }) {
+export default function WorkTimer({ auth, initialSelectedTask }) {
   // ---------------- STATES ----------------
   const [companies, setCompanies] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -24,6 +24,7 @@ export default function WorkTimer({ auth }) {
 
   // Custom Task (shown only in custom mode)
   const [customTask, setCustomTask] = useState("");
+  const [assignedTaskInfo, setAssignedTaskInfo] = useState(initialSelectedTask || null);
 
   // Sessions
   const [sessions, setSessions] = useState([]);
@@ -51,6 +52,12 @@ export default function WorkTimer({ auth }) {
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const pauseCooldownRef = useRef(0);
   const actionLockRef = useRef(null);
+  const opChainRef = useRef(Promise.resolve());
+  const enqueueSessionOp = useCallback((opFn) => {
+    const next = opChainRef.current.then(opFn, opFn);
+    opChainRef.current = next;
+    return next;
+  }, []);
 
   // 🔒 Refs that mirror state for use in async callbacks (avoids stale closures)
   const sessionsRef = useRef([]);
@@ -285,11 +292,20 @@ async function loadMaster() {
 
       setSessions(arr);
 
-      const running = arr.find((x) => x.status === "active");
-      const paused = arr.find((x) => x.status === "paused");
+      const todayStr = getLocalDateStr(new Date());
+
+      // 🛡️ Filter strictly for today's active/paused session.
+      // Sessions from previous days (even if viewed in 'week' or 'month' range) must NEVER be treated as the active session today!
+      const running = arr.find((x) => x.status === "active" && x.date === todayStr);
+      const paused = arr.find((x) => x.status === "paused" && x.date === todayStr);
       let current = running || paused || null;
 
       if (lock && lock.type === "stop") {
+        current = null;
+      }
+
+      // If current session is from a previous day, disregard it as active
+      if (current && current.date && current.date !== todayStr) {
         current = null;
       }
 
@@ -301,7 +317,6 @@ async function loadMaster() {
         (String(prevActive?._id) === String(current?._id) || String(prevActive?._id).startsWith("temp-")) &&
         timerRef.current !== null;
 
-      const todayStr = getLocalDateStr(new Date());
       const isTodayIncluded = !range.from || (range.from <= todayStr && (!range.to || range.to >= todayStr));
       if (isTodayIncluded || current) {
         setActiveSession(current);
@@ -320,8 +335,9 @@ async function loadMaster() {
         offlineManager.setOffline(true);
         setIsOffline(true);
 
+        const todayStr = getLocalDateStr(new Date());
         const offSess = offlineManager.getOfflineSession();
-        if (offSess) {
+        if (offSess && offSess.date === todayStr && (offSess.status === "active" || offSess.status === "paused")) {
           const prevActive = activeSessionRef.current;
           const isAlreadyRunning =
             prevActive?.status === "active" &&
@@ -339,10 +355,10 @@ async function loadMaster() {
             startLocalTicker(offSess);
           }
         } else {
-          setSessions(prevSessions);
-          setActiveSession(prevActiveSession);
-          activeSessionRef.current = prevActiveSession;
-          setElapsed(prevElapsed);
+          setActiveSession(null);
+          activeSessionRef.current = null;
+          clearTicker();
+          setElapsed(0);
         }
         setError(""); // Smooth fallback, no red error alert
       } else {
@@ -408,8 +424,12 @@ async function loadMaster() {
     const flag = localStorage.getItem(flagKey);
     if (flag !== "1") return;
 
+    const todayStr = getLocalDateStr(new Date());
     const cur = activeSessionRef.current;
-    if (!cur || cur.status !== "paused") return;
+    if (!cur || cur.status !== "paused" || cur.date !== todayStr) {
+      localStorage.removeItem(flagKey);
+      return;
+    }
 
     resumeInProgressRef.current = true;
     try {
@@ -429,6 +449,75 @@ async function loadMaster() {
     })();
     return () => clearTicker();
   }, []);
+
+  const selectAssignedTask = useCallback(
+    async (task) => {
+      if (!task) return;
+      try {
+        const proj = task.project;
+        const pId = proj?._id || proj;
+        const cId = proj?.company?._id || proj?.company || "";
+        const catId = proj?.category?._id || proj?.category || "";
+
+        setAssignedTaskInfo(task);
+
+        if (pId) {
+          setMode("project");
+          if (cId) setCompanyId(String(cId));
+          if (catId) setCategoryId(String(catId));
+          setProjectId(String(pId));
+          localStorage.setItem("lastProjectId", String(pId));
+
+          if (cId && catId) {
+            try {
+              const list = await api(
+                `/api/projects?company=${cId}&category=${catId}`,
+                { token: auth.token }
+              );
+              if (Array.isArray(list)) {
+                setProjects(
+                  [...list].sort((a, b) =>
+                    (a.name || "").localeCompare(b.name || "", undefined, {
+                      sensitivity: "base",
+                    })
+                  )
+                );
+              }
+            } catch (_) {}
+          }
+
+          if (task.taskType) {
+            setWorkType(task.taskType);
+          }
+        } else {
+          setMode("custom");
+          setCustomTask(task.title || "");
+        }
+
+        // Smoothly focus the Start Timer button
+        setTimeout(() => {
+          const btn = document.getElementById("work-timer-start-btn");
+          if (btn) {
+            btn.scrollIntoView({ behavior: "smooth", block: "center" });
+            btn.focus();
+            btn.classList.add("ring-4", "ring-emerald-400", "scale-105");
+            setTimeout(() => {
+              btn?.classList.remove("ring-4", "ring-emerald-400", "scale-105");
+            }, 1800);
+          }
+        }, 150);
+      } catch (err) {
+        console.error("Failed to select assigned task in timer:", err);
+      }
+    },
+    [auth?.token]
+  );
+
+  useEffect(() => {
+    if (initialSelectedTask) {
+      selectAssignedTask(initialSelectedTask);
+    }
+  }, [initialSelectedTask, selectAssignedTask]);
 
 
   useEffect(() => {
@@ -485,8 +574,18 @@ async function loadMaster() {
 
   useEffect(() => {
     const handler = () => {
+      const todayStr = getLocalDateStr(new Date());
       const cur = activeSessionRef.current;
       if (!cur || cur.status !== "paused") return;
+
+      // Do not auto-resume sessions from previous days!
+      if (cur.date && cur.date !== todayStr) {
+        setActiveSession(null);
+        activeSessionRef.current = null;
+        clearTicker();
+        setElapsed(0);
+        return;
+      }
 
       autoPausedRef.current = false;
       autoResumeOnActivity("system:wake");
@@ -506,19 +605,38 @@ async function loadMaster() {
       clearTicker();
       setElapsed((prev) => prev);
 
-      pause();
+      pause(true); // isAuto = true (0s cooldown)
     };
 
     const off = window.worktracker?.onSystemIdle?.(handler);
     return () => typeof off === "function" && off();
   }, []);
 
-  // 🖱️ Automatic resume on user activity (mouse movement, keypress, click) when paused
+  // 🖱️ Automatic resume on user activity (mouse movement, keypress, click, scroll) when paused
   const autoResumeOnActivity = useCallback((source = "user") => {
-    const cur = activeSessionRef.current;
-    if (!cur || cur.status !== "paused") return;
+    const todayStr = getLocalDateStr(new Date());
+    let cur = activeSessionRef.current || activeSession;
+    if (cur?.date && cur.date !== todayStr) {
+      setActiveSession(null);
+      activeSessionRef.current = null;
+      clearTicker();
+      setElapsed(0);
+      cur = null;
+    }
 
-    // Grace period right after pausing (ignore user releasing pause button or moving away)
+    if (!cur || cur.status !== "paused") {
+      const pausedInList = (sessionsRef.current || []).find((s) => s.status === "paused" && s.date === todayStr);
+      if (pausedInList) {
+        cur = pausedInList;
+        activeSessionRef.current = pausedInList;
+        setActiveSession(pausedInList);
+      }
+    }
+
+    const isPaused = cur?.status === "paused" && cur?.date === todayStr;
+    if (!isPaused) return;
+
+    // Grace period right after manual pausing (prevent click release from instantly un-pausing)
     if (Date.now() < pauseCooldownRef.current) return;
 
     if (resumeInProgressRef.current) return;
@@ -528,29 +646,41 @@ async function loadMaster() {
     autoPausedRef.current = false;
 
     resumeInProgressRef.current = true;
+    // Watchdog timer: ensure lock is never permanently stuck if network hangs
+    const watchdog = setTimeout(() => {
+      resumeInProgressRef.current = false;
+    }, 4000);
+
     resume().finally(() => {
+      clearTimeout(watchdog);
       resumeInProgressRef.current = false;
     });
-  }, []);
+  }, [activeSession]);
 
   useEffect(() => {
     let lastCheck = 0;
+    let anchorPos = null;
+
     const activityHandler = (e) => {
-      const cur = activeSessionRef.current;
-      if (!cur || cur.status !== "paused") return;
+      const cur = activeSessionRef.current || activeSession;
+      const isPaused = cur?.status === "paused" || (sessionsRef.current || []).some((s) => s.status === "paused");
+      if (!isPaused) return;
 
       if (Date.now() < pauseCooldownRef.current) return;
 
-      // For mouse move, require real movement of at least 4 pixels to filter micro sensor jitter
+      // For mouse move, require real movement of at least 5px from anchor to filter optical sensor micro-jitter
       if (e && e.type === "mousemove") {
-        const dx = Math.abs(e.clientX - lastMousePosRef.current.x);
-        const dy = Math.abs(e.clientY - lastMousePosRef.current.y);
-        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-        if (dx < 4 && dy < 4) return;
+        if (!anchorPos) {
+          anchorPos = { x: e.clientX, y: e.clientY };
+          return;
+        }
+        const dist = Math.hypot(e.clientX - anchorPos.x, e.clientY - anchorPos.y);
+        if (dist < 5) return;
+        anchorPos = { x: e.clientX, y: e.clientY };
       }
 
       const now = Date.now();
-      if (now - lastCheck < 800) return;
+      if (now - lastCheck < 400) return;
       lastCheck = now;
 
       autoResumeOnActivity(e?.type || "user");
@@ -559,19 +689,33 @@ async function loadMaster() {
     window.addEventListener("mousemove", activityHandler, { passive: true });
     window.addEventListener("keydown", activityHandler, { passive: true });
     window.addEventListener("mousedown", activityHandler, { passive: true });
+    window.addEventListener("wheel", activityHandler, { passive: true });
+    window.addEventListener("focus", () => autoResumeOnActivity("window:focus"));
 
-    // Also listen to system-level active and user-activity from Electron
+    const handleVisChange = () => {
+      if (document.visibilityState === "visible") {
+        autoResumeOnActivity("window:visible");
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisChange);
+
+    // Also listen to system-level active, wake, and user-activity from Electron
     const offActive = window.worktracker?.onSystemActive?.(() => autoResumeOnActivity("system:active"));
     const offActivity = window.worktracker?.onUserActivity?.(() => autoResumeOnActivity("system:user-activity"));
+    const offWake = window.worktracker?.onSystemWake?.(() => autoResumeOnActivity("system:wake"));
 
     return () => {
       window.removeEventListener("mousemove", activityHandler);
       window.removeEventListener("keydown", activityHandler);
       window.removeEventListener("mousedown", activityHandler);
+      window.removeEventListener("wheel", activityHandler);
+      window.removeEventListener("focus", () => autoResumeOnActivity("window:focus"));
+      document.removeEventListener("visibilitychange", handleVisChange);
       if (typeof offActive === "function") offActive();
       if (typeof offActivity === "function") offActivity();
+      if (typeof offWake === "function") offWake();
     };
-  }, [autoResumeOnActivity]);
+  }, [autoResumeOnActivity, activeSession]);
 
   useEffect(() => {
     const off = window.worktracker?.onAppClosing?.(() => {
@@ -634,9 +778,11 @@ async function loadMaster() {
     loadSessionsAndTick();
   }, [dateFilter]);
 
-  const hasRunning = activeSession?.status === "active";
-  const hasPaused = activeSession?.status === "paused";
-  const anyCurrent = Boolean(activeSession);
+  const todayStr = getLocalDateStr(new Date());
+  const isTodaySession = activeSession?.date === todayStr;
+  const hasRunning = activeSession?.status === "active" && isTodaySession;
+  const hasPaused = activeSession?.status === "paused" && isTodaySession;
+  const anyCurrent = Boolean(activeSession && isTodaySession);
 
   const activeProjId = activeSession?.projectId || (typeof activeSession?.project === "object" ? activeSession?.project?._id : activeSession?.project);
   const activeCustom = activeSession?.customTask || "";
@@ -702,9 +848,24 @@ async function loadMaster() {
       const body = {
         taskType: mode === "project" ? workType : undefined,
         projectId: mode === "project" ? projectId : null,
+        taskId: mode === "project" && assignedTaskInfo ? (assignedTaskInfo._id || assignedTaskInfo.id) : undefined,
+        taskTitle: mode === "project" && assignedTaskInfo ? assignedTaskInfo.title : undefined,
         customTask: mode === "custom" ? customTask.trim() : null,
-        remarks: "",
+        remarks: assignedTaskInfo?.title ? `Task: ${assignedTaskInfo.title}` : "",
       };
+
+      // Automatically move open planned task to in_progress
+      if (assignedTaskInfo && (assignedTaskInfo.status === "open" || assignedTaskInfo.status === "not_started")) {
+        api(`/api/tasks/${assignedTaskInfo._id || assignedTaskInfo.id}/status`, {
+          method: "PATCH",
+          token: auth.token,
+          body: { status: "in_progress" },
+        })
+          .then(() => {
+            window.dispatchEvent(new CustomEvent("taskCount:refresh"));
+          })
+          .catch((e) => console.warn("Auto task status transition warning:", e.message));
+      }
 
       const res = await api("/api/work-sessions/start", {
         method: "POST",
@@ -761,119 +922,138 @@ async function loadMaster() {
     }
   }
 
-  async function pause() {
-    setError("");
-    pauseCooldownRef.current = Date.now() + 2000; // 2s cooldown so mouse click on Pause button does not immediately auto-resume
+  async function pause(isAuto = false) {
+    return enqueueSessionOp(async () => {
+      setError("");
+      // Cooldown is only needed for manual mouse click on Pause button (1s), 0s for auto-pause
+      pauseCooldownRef.current = isAuto ? 0 : Date.now() + 1000;
 
-    const cur = activeSessionRef.current || activeSession;
-    if (!cur) return;
+      const cur = activeSessionRef.current || activeSession;
+      if (!cur) return;
 
-    // ⚡ INSTANT OPTIMISTIC PAUSE (0ms UI latency)
-    const additionalMins = cur.currentStart
-      ? Math.max(0, (Date.now() - new Date(cur.currentStart).getTime()) / 60000)
-      : 0;
-    const newAccumulated = (cur.accumulatedMinutes || 0) + additionalMins;
-    const pausedSess = {
-      ...cur,
-      status: "paused",
-      accumulatedMinutes: newAccumulated,
-      totalMinutes: newAccumulated,
-      currentStart: null,
-    };
+      // ⚡ INSTANT OPTIMISTIC PAUSE (0ms UI latency)
+      const additionalMins = cur.currentStart
+        ? Math.max(0, (Date.now() - new Date(cur.currentStart).getTime()) / 60000)
+        : 0;
+      const newAccumulated = (cur.accumulatedMinutes || 0) + additionalMins;
+      const pausedSess = {
+        ...cur,
+        status: "paused",
+        accumulatedMinutes: newAccumulated,
+        totalMinutes: newAccumulated,
+        currentStart: null,
+      };
 
-    actionLockRef.current = { type: "pause", sessionId: cur._id, session: pausedSess };
-    clearTicker();
-    setElapsed(Math.max(0, newAccumulated * 60000));
-    setActiveSession(pausedSess);
-    activeSessionRef.current = pausedSess;
-    setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
+      actionLockRef.current = { type: "pause", sessionId: cur._id, session: pausedSess };
+      clearTicker();
+      setElapsed(Math.max(0, newAccumulated * 60000));
+      setActiveSession(pausedSess);
+      activeSessionRef.current = pausedSess;
+      setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
 
-    try {
-      await api("/api/work-sessions/pause", {
-        method: "POST",
-        token: auth.token,
-      });
+      try {
+        await api("/api/work-sessions/pause", {
+          method: "POST",
+          token: auth.token,
+          body: {
+            sessionId: cur._id && !String(cur._id).startsWith("temp-") && !String(cur._id).startsWith("offline-")
+              ? cur._id
+              : undefined,
+          },
+        });
 
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessionsAndTick({ isBackground: true });
-    } catch (e) {
-      // 🌐 OFFLINE FALLBACK: Pause session in local cache
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        console.log("🌐 Network offline -> pausing session in local cache");
-        const pausedSess = offlineManager.pauseOfflineSession(cur);
-        if (pausedSess) {
-          setActiveSession(pausedSess);
-          activeSessionRef.current = pausedSess;
-          setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
-          setIsOffline(true);
-          window.worktracker?.notifySessionsChanged?.();
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessionsAndTick({ isBackground: true });
+      } catch (e) {
+        // 🌐 OFFLINE FALLBACK: Pause session in local cache
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          console.log("🌐 Network offline -> pausing session in local cache");
+          const pausedSess = offlineManager.pauseOfflineSession(cur);
+          if (pausedSess) {
+            setActiveSession(pausedSess);
+            activeSessionRef.current = pausedSess;
+            setSessions((prev) => prev.map((s) => (s._id === cur._id ? pausedSess : s)));
+            setIsOffline(true);
+            window.worktracker?.notifySessionsChanged?.();
+          }
+        } else {
+          console.error("Pause failed:", e);
+          setError(e?.message || "Failed to pause session.");
         }
-      } else {
-        console.error("Pause failed:", e);
-        setError(e?.message || "Failed to pause session.");
+      } finally {
+        actionLockRef.current = null;
       }
-    } finally {
-      actionLockRef.current = null;
-    }
+    });
   }
 
   async function resume() {
-    setError("");
-    pauseCooldownRef.current = 0;
-    const cur = activeSessionRef.current || activeSession;
-    if (!cur) return;
+    return enqueueSessionOp(async () => {
+      setError("");
+      pauseCooldownRef.current = 0;
+      const todayStr = getLocalDateStr(new Date());
+      let cur = activeSessionRef.current || activeSession || (sessionsRef.current || []).find((s) => s.status === "paused" && s.date === todayStr);
 
-    // ⚡ INSTANT OPTIMISTIC RESUME (0ms UI latency)
-    const resumedSess = {
-      ...cur,
-      status: "active",
-      currentStart: new Date().toISOString(),
-    };
+      // ⚡ INSTANT OPTIMISTIC RESUME (0ms UI latency)
+      if (cur) {
+        const resumedSess = {
+          ...cur,
+          status: "active",
+          currentStart: new Date().toISOString(),
+        };
 
-    actionLockRef.current = { type: "resume", sessionId: cur._id, session: resumedSess };
-    setActiveSession(resumedSess);
-    activeSessionRef.current = resumedSess;
-    startLocalTicker(resumedSess);
-    setSessions((prev) => prev.map((s) => (s._id === cur._id ? resumedSess : s)));
-
-    const targetSessionId = cur._id;
-    try {
-      await api("/api/work-sessions/resume", {
-        method: "POST",
-        token: auth.token,
-        body: {
-          sessionId: targetSessionId && !String(targetSessionId).startsWith("temp-") && !String(targetSessionId).startsWith("offline-")
-            ? targetSessionId
-            : undefined,
-        },
-      });
-
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessionsAndTick({ isBackground: true });
-    } catch (e) {
-      // 🌐 OFFLINE FALLBACK: Resume session in local cache
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        console.log("🌐 Network offline -> resuming session in local cache");
-        const resumedSess = offlineManager.resumeOfflineSession(cur);
-        if (resumedSess) {
-          setActiveSession(resumedSess);
-          activeSessionRef.current = resumedSess;
-          setSessions((prev) => [resumedSess, ...prev.filter((s) => s._id !== resumedSess._id)]);
-          startLocalTicker(resumedSess);
-          setIsOffline(true);
-          window.worktracker?.notifySessionsChanged?.();
-        }
-      } else {
-        console.error("Resume failed:", e);
-        setError(e?.message || "Failed to resume session.");
+        actionLockRef.current = { type: "resume", sessionId: cur._id, session: resumedSess };
+        setActiveSession(resumedSess);
+        activeSessionRef.current = resumedSess;
+        startLocalTicker(resumedSess);
+        setSessions((prev) => prev.map((s) => (s._id === cur._id ? resumedSess : s)));
       }
-    } finally {
-      actionLockRef.current = null;
-    }
+
+      const targetSessionId = cur?._id;
+      try {
+        const res = await api("/api/work-sessions/resume", {
+          method: "POST",
+          token: auth.token,
+          body: {
+            sessionId: targetSessionId && !String(targetSessionId).startsWith("temp-") && !String(targetSessionId).startsWith("offline-")
+              ? targetSessionId
+              : undefined,
+          },
+        });
+
+        if (res && res._id) {
+          setActiveSession(res);
+          activeSessionRef.current = res;
+          startLocalTicker(res);
+          setSessions((prev) => [res, ...prev.filter((s) => s._id !== res._id)]);
+        }
+
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessionsAndTick({ isBackground: true });
+      } catch (e) {
+        // 🌐 OFFLINE FALLBACK: Resume session in local cache
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          console.log("🌐 Network offline -> resuming session in local cache");
+          const resumedSess = offlineManager.resumeOfflineSession(cur);
+          if (resumedSess) {
+            setActiveSession(resumedSess);
+            activeSessionRef.current = resumedSess;
+            setSessions((prev) => [resumedSess, ...prev.filter((s) => s._id !== resumedSess._id)]);
+            startLocalTicker(resumedSess);
+            setIsOffline(true);
+            window.worktracker?.notifySessionsChanged?.();
+          }
+        } else {
+          console.error("Resume failed:", e);
+          setError(e?.message || "Failed to resume session.");
+        }
+      } finally {
+        actionLockRef.current = null;
+      }
+    });
   }
 
   async function stop() {
@@ -965,7 +1145,6 @@ async function loadMaster() {
     ? elapsed
     : (activeSession ? (activeSession.totalMinutes || activeSession.accumulatedMinutes || 0) * 60000 : 0);
 
-  const isTodaySession = activeSession?.date ? activeSession.date === getLocalDateStr(new Date()) : true;
   const todaysTotalMs = todaysCompletedMs + (isTodaySession ? activeSessionLiveMs : 0);
 
   const todaysSessionsCount = useMemo(() => {
@@ -1164,67 +1343,87 @@ async function loadMaster() {
 
   // ---- UI ----
   return (
-    <div className="min-h-screen bg-[#f7f9fc] ">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        {/* Error */}
+    <div className="space-y-4 max-w-[1500px] mx-auto pb-8">
+      {/* Error */}
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 shadow-xs">
+          {error}
+        </div>
+      )}
 
-        {/* Error */}
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
+      {/* ---------------- MODE TOGGLE ---------------- */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xs">
+        <div className="flex items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl">
+          <button
+            onClick={() => {
+              setMode("project");
+              setCustomTask("");
+            }}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              mode === "project"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>Project Mode</span>
+          </button>
 
-        {/* ---------------- MODE TOGGLE ---------------- */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-  {/* Mode Tabs */}
-  <div className="flex items-center gap-1">
-    <button
-      onClick={() => {
-        setMode("project");
-        setCustomTask("");
-      }}
-      className={`border-b-2 px-3 py-1.5 text-sm font-semibold transition ${
-        mode === "project"
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-slate-500 hover:text-slate-800"
-      }`}
-    >
-      Project Mode
-    </button>
+          <button
+            onClick={() => {
+              setMode("custom");
+              setCompanyId("");
+              setCategoryId("");
+              setProjectId("");
+              setProjects([]);
+            }}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              mode === "custom"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>Custom Task</span>
+          </button>
+        </div>
 
-    <button
-      onClick={() => {
-        setMode("custom");
-        setCompanyId("");
-        setCategoryId("");
-        setProjectId("");
-        setProjects([]);
-      }}
-      className={`border-b-2 px-3 py-1.5 text-sm font-semibold transition ${
-        mode === "custom"
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-slate-500 hover:text-slate-800"
-      }`}
-    >
-      Custom Task
-    </button>
-  </div>
-
-  {/* Refresh */}
-  <button
-    onClick={loadSessionsAndTick}
-    className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-  >
-    ↻ Refresh
-  </button>
-</div>
+        <button
+          onClick={loadSessionsAndTick}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-semibold text-slate-700 transition cursor-pointer"
+        >
+          <span className={loading ? "animate-spin text-blue-600 inline-block" : "text-slate-500"}>↻</span>
+          <span>Refresh</span>
+        </button>
+      </div>
 
       {/* ---------------- SELECT CONTEXT (PROJECT MODE ONLY) ---------------- */}
       {mode === "project" && (
         <div className="space-y-4">
           {/* Project & Category Dropdowns */}
-          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.08)]">
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
+            {assignedTaskInfo && (
+              <div className="flex items-center justify-between rounded-2xl bg-blue-50 border border-blue-200 px-4 py-2.5 text-xs text-blue-900 mb-4 shadow-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-blue-900">Planned Task:</span>
+                  <span className="font-semibold text-blue-700">{assignedTaskInfo.title}</span>
+                  <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800">
+                    {assignedTaskInfo.taskType || workType || "Alpha"}
+                  </span>
+                  {assignedTaskInfo.estimatedMinutes && (
+                    <span className="text-[11px] text-blue-600">
+                      • Est: {Math.round(assignedTaskInfo.estimatedMinutes / 60)}h
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAssignedTaskInfo(null)}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer ml-2"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
@@ -1287,7 +1486,7 @@ async function loadMaster() {
                     value={field.value}
                     disabled={field.disabled}
                     onChange={(e) => field.onChange(e.target.value)}
-                    className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400"
                   >
                     <option value="">{field.placeholder}</option>
                     {field.options.map((item) => (
@@ -1308,7 +1507,7 @@ async function loadMaster() {
                   value={workType}
                   onChange={(e) => setWorkType(e.target.value)}
                   disabled={!projectId}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100/70 disabled:text-slate-400"
                 >
                   {workTypes.map((wt) => (
                     <option key={wt} value={wt}>
@@ -1323,8 +1522,8 @@ async function loadMaster() {
       )}
 
 {mode === "custom" && (
-  <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.08)]">
-    <div className="mb-5">
+  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
+    <div className="mb-4">
       <h3 className="text-sm font-bold text-slate-900">
         Custom Task Details
       </h3>
@@ -1344,7 +1543,7 @@ async function loadMaster() {
           value={customTask}
           onChange={(e) => setCustomTask(e.target.value)}
           placeholder="e.g. Team meeting, code review"
-          className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+          className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         />
       </div>
 
@@ -1356,7 +1555,7 @@ async function loadMaster() {
         <select
           value={workType}
           onChange={(e) => setWorkType(e.target.value)}
-          className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+          className="h-10 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         >
           {workTypes.map((wt) => (
             <option key={wt} value={wt}>
@@ -1370,48 +1569,51 @@ async function loadMaster() {
 )}
 
         {/* ---------------- Premium Timer + Today Summary ---------------- */}
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+        <div className="grid gap-3.5 lg:grid-cols-[1.4fr_0.8fr]">
           {/* Timer Card */}
-          <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-              <div>
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Current Session
                   </p>
 
                   {hasRunning && (
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200/60">
                       ● Running
                     </span>
                   )}
 
                   {hasPaused && (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 border border-amber-200/60">
                       Paused
                     </span>
                   )}
 
                   {isOffline && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-800 animate-pulse">
-                      <WifiOff size={13} className="text-amber-600" />
-                      Offline (Tracking Locally)
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-800 animate-pulse">
+                      <WifiOff size={11} className="text-amber-600" />
+                      Offline
                     </span>
                   )}
 
                   {isSyncing && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                      <RefreshCw size={13} className="animate-spin text-blue-600" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                      <RefreshCw size={11} className="animate-spin text-blue-600" />
                       Syncing…
                     </span>
                   )}
                 </div>
 
-                <h2 className="mt-2 max-w-[420px] truncate text-lg font-semibold text-gray-900" title={
-                  anyCurrent
-                    ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
-                    : (mode === "project" && selectedProj ? selectedProj.name : "No active session")
-                }>
+                <h2
+                  className="mt-1 max-w-[420px] truncate text-base font-bold text-slate-900"
+                  title={
+                    anyCurrent
+                      ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
+                      : (mode === "project" && selectedProj ? selectedProj.name : "No active session")
+                  }
+                >
                   {anyCurrent
                     ? (activeSession.customTask || activeSession.projectName || activeSession.project?.name || "No Project")
                     : (mode === "project" && selectedProj ? selectedProj.name : "No active session")}
@@ -1419,44 +1621,44 @@ async function loadMaster() {
 
                 {/* Show context switch badge if a different project is selected */}
                 {anyCurrent && !isSameContext && selectedProj && (
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs text-blue-900 font-medium">
-                    <span className="text-blue-600">Selected to switch:</span>
-                    <strong className="font-bold text-blue-950">{selectedProj.name}</strong>
+                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-900 font-medium">
+                    <span className="text-blue-600">Switching to:</span>
+                    <strong className="font-bold text-blue-950 truncate max-w-[200px]">{selectedProj.name}</strong>
                   </div>
                 )}
 
-                <div className="mt-4 font-mono text-5xl font-bold tracking-tight text-gray-950">
+                <div className="mt-1 font-mono text-4xl font-extrabold tracking-tight text-slate-950">
                   {formatTime(elapsed)}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 md:flex-col md:items-stretch">
+              <div className="flex flex-wrap items-center gap-2.5 md:flex-col md:items-stretch shrink-0">
                 {/* 1. FIRST BUTTON: Start Session (idle) / Pause (running) / Resume (paused) */}
                 {hasRunning ? (
                   <button
                     onClick={pause}
-                    className="group inline-flex items-center justify-center gap-3 rounded-full border-2 border-orange-500 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-[0_6px_18px_rgba(249,115,22,0.16)] transition-all duration-200 hover:bg-orange-50 hover:shadow-[0_8px_24px_rgba(249,115,22,0.24)] active:scale-[0.98]"
+                    className="group inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-orange-500 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(249,115,22,0.16)] transition-all duration-200 hover:bg-orange-50 hover:shadow-[0_8px_24px_rgba(249,115,22,0.24)] active:scale-[0.98] cursor-pointer"
                   >
-                    <span className="text-2xl font-bold leading-none text-orange-500">
+                    <span className="text-lg font-bold leading-none text-orange-500">
                       ❚❚
                     </span>
-                    Pause
+                    <span>Pause</span>
                   </button>
-                ) : hasPaused ? (
+                ) : (hasPaused && isSameContext) ? (
                   <button
                     id="work-timer-start-btn"
                     onClick={resume}
-                    className="group inline-flex items-center justify-center gap-3 rounded-full border-2 border-green-600 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 hover:shadow-[0_8px_24px_rgba(22,163,74,0.22)] active:scale-[0.98]"
+                    className="group inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-green-600 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 hover:shadow-[0_8px_24px_rgba(22,163,74,0.22)] active:scale-[0.98] cursor-pointer"
                   >
                     <span className="inline-flex items-center text-green-600">
                       <svg
-                        className="h-5 w-5 fill-green-600"
+                        className="h-4 w-4 fill-green-600"
                         viewBox="0 0 24 24"
                       >
                         <path d="M8 5v14l11-7z" />
                       </svg>
                     </span>
-                    Resume
+                    <span>Resume</span>
                   </button>
                 ) : (
                   <button
@@ -1466,17 +1668,17 @@ async function loadMaster() {
                       (mode === "project" && (!projectId || !workType)) ||
                       (mode === "custom" && !customTask.trim())
                     }
-                    className="inline-flex items-center justify-center gap-3 rounded-full border-2 border-green-600 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-green-600 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(22,163,74,0.14)] transition-all duration-200 hover:bg-green-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
                   >
                     <span className="inline-flex items-center text-green-600">
                       <svg
-                        className="h-5 w-5 fill-green-600"
+                        className="h-4 w-4 fill-green-600"
                         viewBox="0 0 24 24"
                       >
                         <path d="M8 5v14l11-7z" />
                       </svg>
                     </span>
-                    Start Session
+                    <span>{hasPaused && !isSameContext ? "Switch & Start" : "Start Session"}</span>
                   </button>
                 )}
 
@@ -1484,143 +1686,164 @@ async function loadMaster() {
                 <button
                   onClick={stop}
                   disabled={!anyCurrent}
-                  className="inline-flex items-center justify-center gap-3 rounded-full border-2 border-red-500 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-[0_6px_18px_rgba(239,68,68,0.14)] transition-all duration-200 hover:bg-red-50 hover:shadow-[0_8px_24px_rgba(239,68,68,0.22)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex items-center justify-center gap-2.5 rounded-full border-2 border-red-500 bg-white px-7 py-2.5 text-xs font-bold text-slate-800 shadow-[0_6px_18px_rgba(239,68,68,0.14)] transition-all duration-200 hover:bg-red-50 hover:shadow-[0_8px_24px_rgba(239,68,68,0.22)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
                 >
-                  <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-red-500 text-red-500">
+                  <span className="grid h-5 w-5 place-items-center rounded-full border-2 border-red-500 text-red-500 text-[10px]">
                     ■
                   </span>
-                  Stop Session
+                  <span>Stop Session</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Today Summary Card */}
-          <div className="rounded-3xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
-              Today Total
-            </p>
+          {/* Today Summary Card (Soft Slate & Pill Chips) */}
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Today Total
+                </p>
+                <span className="text-[10px] font-medium text-slate-400">
+                  Logged Time
+                </span>
+              </div>
 
-            <div className="mt-4 font-mono text-4xl font-bold text-blue-700">
-              {formatTime(todaysTotalMs)}
+              <div className="mt-1.5 font-mono text-3xl font-extrabold tracking-tight text-slate-900">
+                {formatTime(todaysTotalMs)}
+              </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-2xl bg-white p-3 shadow-sm">
-                <p className="text-xs text-gray-500">Status</p>
-                <p className="mt-1 font-semibold text-gray-900">
-                  {hasRunning ? "Working" : hasPaused ? "Paused" : "Idle"}
-                </p>
-              </div>
+            {/* Pill chips directly below the timer */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {/* Status Pill Chip */}
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border ${
+                  hasRunning
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                    : hasPaused
+                    ? "bg-amber-50 text-amber-700 border-amber-200/80"
+                    : "bg-slate-50 text-slate-600 border-slate-200/70"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    hasRunning
+                      ? "bg-emerald-500 animate-pulse"
+                      : hasPaused
+                      ? "bg-amber-500"
+                      : "bg-slate-400"
+                  }`}
+                />
+                {hasRunning ? "Working" : hasPaused ? "Paused" : "Idle"}
+              </span>
 
-              <div className="rounded-2xl bg-white p-3 shadow-sm">
-                <p className="text-xs text-gray-500">Sessions</p>
-                <p className="mt-1 font-semibold text-gray-900">
-                  {todaysSessionsCount}
-                </p>
-              </div>
+              {/* Sessions Count Pill Chip */}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 border border-slate-200/70 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                <span className="text-slate-400 font-normal">Sessions:</span>
+                <span className="font-bold text-slate-900">{todaysSessionsCount}</span>
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Sessions table (unchanged) */}
-   <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)] min-h-[580px] flex flex-col">
-  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-5 rounded-t-3xl">
-    <div>
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">
-        Work Overview
-      </p>
+        {/* Sessions table */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs min-h-[540px] flex flex-col overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600">
+                Work Overview
+              </p>
 
-      <h3 className="mt-1 text-xl font-extrabold text-slate-900">
-        {range.from && range.to
-          ? "Custom Date Range"
-          : dateFilter === "today"
-            ? "Today’s Work Sessions"
-            : dateFilter === "week"
-              ? "This Week’s Work Sessions"
-              : "This Month’s Work Sessions"}
-      </h3>
-    </div>
+              <h3 className="mt-0.5 text-lg font-bold text-slate-900">
+                {range.from && range.to
+                  ? "Custom Date Range"
+                  : dateFilter === "today"
+                    ? "Today’s Work Sessions"
+                    : dateFilter === "week"
+                      ? "This Week’s Work Sessions"
+                      : "This Month’s Work Sessions"}
+              </h3>
+            </div>
 
-    {loading && (
-      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 animate-pulse">
-        Loading…
-      </span>
-    )}
-  </div>
+            {loading && (
+              <span className="rounded-full bg-blue-50 border border-blue-200/60 px-3 py-1 text-xs font-semibold text-blue-600 animate-pulse">
+                Loading…
+              </span>
+            )}
+          </div>
 
-  <div className="mt-1">
-    <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
-      {/* Left Section: Date Range Picker + Date Filter Buttons */}
-      <div className="flex flex-wrap items-center gap-2 relative z-30">
-        <DateRangePicker
-          from={range.from}
-          to={range.to}
-          onChange={(r) => {
-            setRange(r); // Save selected dates and reload sessions
-          }}
-        />
+          <div className="mt-1">
+            <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5">
+              {/* Left Section: Date Range Picker + Date Filter Buttons */}
+              <div className="flex flex-wrap items-center gap-2 relative z-30">
+                <DateRangePicker
+                  from={range.from}
+                  to={range.to}
+                  onChange={(r) => {
+                    setRange(r); // Save selected dates and reload sessions
+                  }}
+                />
 
-        {["today", "week", "month"].map((f) => (
-          <button
-            key={f}
-            onClick={() => {
-              setRange({ from: null, to: null }); // Clear custom range
-              setDateFilter(f);
-            }}
-            className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
-              dateFilter === f
-                ? "bg-slate-900 text-white shadow-md"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            {f.toUpperCase()}
-          </button>
-        ))}
-      </div>
+                {["today", "week", "month"].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => {
+                      setRange({ from: null, to: null }); // Clear custom range
+                      setDateFilter(f);
+                    }}
+                    className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                      dateFilter === f
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
+                    }`}
+                  >
+                    {f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
 
-      {/* Right Section: View Toggle + Export Button */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* View Toggle Buttons */}
-        <div className="flex items-center gap-1 rounded-full bg-slate-100 p-1">
-          <button
-            onClick={() => setView("work")}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              view === "work"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Work Sessions
-          </button>
+              {/* Right Section: View Toggle + Export Button */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* View Toggle Buttons */}
+                <div className="flex items-center gap-1 rounded-xl bg-slate-100/90 p-1">
+                  <button
+                    onClick={() => setView("work")}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                      view === "work"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Work Sessions
+                  </button>
 
-          <button
-            onClick={() => setView("project")}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              view === "project"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Project
-          </button>
-        </div>
+                  <button
+                    onClick={() => setView("project")}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                      view === "project"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Project
+                  </button>
+                </div>
 
-        {/* Export CSV Button */}
-        <button
-          onClick={() => exportCSV(filteredGroupedSessions)}
-          className="rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
-        >
-          ⬇ Export CSV
-        </button>
-      </div>
-    </div>
+                {/* Export CSV Button */}
+                <button
+                  onClick={() => exportCSV(filteredGroupedSessions)}
+                  className="rounded-xl bg-blue-600 hover:bg-blue-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition cursor-pointer"
+                >
+                  ⬇ Export CSV
+                </button>
+              </div>
+            </div>
 
-    {/* 🔹 VIEW TOGGLE */}
-
-    {view === "work" && (
-      <div className="border-t border-slate-100 bg-slate-50/60 p-4 flex-1 flex flex-col rounded-b-3xl">
-        <div className="flex-1 max-h-[56vh] min-h-[360px] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col">
+            {/* 🔹 VIEW TOGGLE */}
+            {view === "work" && (
+              <div className="border-t border-slate-100 bg-slate-50/40 p-4 flex-1 flex flex-col rounded-b-2xl">
+                <div className="flex-1 max-h-[56vh] min-h-[360px] overflow-auto rounded-xl border border-slate-200/90 bg-white shadow-2xs flex flex-col">
           <table className="w-full text-sm table-fixed border-separate border-spacing-0 flex-1">
             <thead className="sticky top-0 z-20 bg-white border-b border-gray-200 text-xs font-bold uppercase tracking-wider text-slate-500">
               <tr>
@@ -1905,7 +2128,6 @@ async function loadMaster() {
     )}
   </div>
 </div>
-      </div>
     </div>
   );
 }

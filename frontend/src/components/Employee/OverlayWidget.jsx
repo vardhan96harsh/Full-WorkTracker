@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../../api";
 import { offlineManager } from "../../utils/offlineManager";
 
@@ -203,13 +203,21 @@ export default function OverlayWidget() {
         setAuth(null);
       }
     };
+    const handleRefreshed = (e) => {
+      if (e?.detail) setAuth(e.detail);
+    };
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener("auth:refreshed", handleRefreshed);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("auth:refreshed", handleRefreshed);
+    };
   }, []);
 
   if (!auth) return null;
 
-  if (auth?.user?.role === "admin") {
+  if (auth?.user?.role === "admin" || auth?.user?.role === "superadmin") {
     return <AdminOverlay auth={auth} />;
   }
 
@@ -229,10 +237,25 @@ function EmployeeOverlayWidget({ auth }) {
   const timerRef = useRef(null);
   const cardRef = useRef(null);
   const activeSessionRef = useRef(null);
+  const sessionsRef = useRef([]);
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const pauseCooldownRef = useRef(0);
   const resumeInProgressRef = useRef(false);
   const actionLockRef = useRef(null);
+
+  // 🔒 Mutex queue for strict sequential execution of session mutations (start/pause/resume/stop)
+  const opChainRef = useRef(Promise.resolve());
+  const enqueueSessionOp = useCallback((fn) => {
+    const nextPromise = opChainRef.current.then(async () => {
+      try {
+        return await fn();
+      } catch (err) {
+        console.error("Session operation error in Overlay:", err);
+      }
+    });
+    opChainRef.current = nextPromise.catch(() => {});
+    return nextPromise;
+  }, []);
 
   // Sync state with Electron main process and other windows
   useEffect(() => {
@@ -318,12 +341,17 @@ function EmployeeOverlayWidget({ auth }) {
       }
 
       setSessions(arr);
+      sessionsRef.current = arr;
 
-      const running = arr.find((x) => x.status === "active");
-      const paused = arr.find((x) => x.status === "paused");
+      const todayStr = getTodayYMD();
+      const running = arr.find((x) => x.status === "active" && x.date === todayStr);
+      const paused = arr.find((x) => x.status === "paused" && x.date === todayStr);
 
-      // Strictly resolve to running/paused or null (never keep stale active session when stopped)
+      // Strictly resolve to running/paused for TODAY or null
       let cur = running || paused || null;
+      if (cur && cur.date && cur.date !== todayStr) {
+        cur = null;
+      }
       if (lock && lock.type === "stop") {
         cur = null;
       }
@@ -395,11 +423,8 @@ function EmployeeOverlayWidget({ auth }) {
         }
       }
 
-      if (e.status === 401) {
-        localStorage.removeItem("auth");
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("auth:expired"));
-        }
+      if (e?.isAuthExpired) {
+        // api.js has already handled definitive expiration (401/403)
         return;
       }
 
@@ -444,22 +469,48 @@ function EmployeeOverlayWidget({ auth }) {
     });
   }, []);
 
-  // 🖱️ Automatic resume on user activity (mouse move, keypress, click) when paused
+  // 🖱️ Automatic resume on user activity (mouse move, keypress, click, scroll) when paused
   const handleUserActivity = (e) => {
-    const cur = activeSessionRef.current;
-    if (!cur || cur.status !== "paused") return;
+    const todayStr = getTodayYMD();
+    let cur = activeSessionRef.current || activeSession;
+    if (cur && cur.date && cur.date !== todayStr) {
+      setActiveSession(null);
+      activeSessionRef.current = null;
+      clearTicker();
+      setElapsed(0);
+      cur = null;
+    }
+
+    if (!cur || cur.status !== "paused") {
+      const pausedInList = (sessionsRef.current || []).find((s) => s.status === "paused" && s.date === todayStr);
+      if (pausedInList) {
+        cur = pausedInList;
+        activeSessionRef.current = pausedInList;
+        setActiveSession(pausedInList);
+      }
+    }
+
+    if (!cur || cur.status !== "paused" || cur.date !== todayStr) return;
     if (Date.now() < pauseCooldownRef.current) return;
 
     if (e && e.type === "mousemove") {
-      const dx = Math.abs(e.clientX - lastMousePosRef.current.x);
-      const dy = Math.abs(e.clientY - lastMousePosRef.current.y);
-      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-      if (dx < 4 && dy < 4) return;
+      if (!lastMousePosRef.current.initialized) {
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY, initialized: true };
+        return;
+      }
+      const dist = Math.hypot(e.clientX - lastMousePosRef.current.x, e.clientY - lastMousePosRef.current.y);
+      if (dist < 5) return;
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY, initialized: true };
     }
 
     if (resumeInProgressRef.current) return;
     resumeInProgressRef.current = true;
+    const watchdog = setTimeout(() => {
+      resumeInProgressRef.current = false;
+    }, 4000);
+
     doResume().finally(() => {
+      clearTimeout(watchdog);
       resumeInProgressRef.current = false;
     });
   };
@@ -468,94 +519,105 @@ function EmployeeOverlayWidget({ auth }) {
     const onMove = (e) => handleUserActivity(e);
     const onKey = (e) => handleUserActivity(e);
     const onClick = (e) => handleUserActivity(e);
+    const onWheel = (e) => handleUserActivity(e);
 
     window.addEventListener("mousemove", onMove, { passive: true });
     window.addEventListener("keydown", onKey, { passive: true });
     window.addEventListener("mousedown", onClick, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("focus", () => handleUserActivity({ type: "focus" }));
 
     const offActive = window.worktracker?.onSystemActive?.(handleUserActivity);
     const offActivity = window.worktracker?.onUserActivity?.(handleUserActivity);
+    const offWake = window.worktracker?.onSystemWake?.(handleUserActivity);
 
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("focus", () => handleUserActivity({ type: "focus" }));
       if (typeof offActive === "function") offActive();
       if (typeof offActivity === "function") offActivity();
+      if (typeof offWake === "function") offWake();
     };
   }, []);
 
   // ---------- actions (manual buttons) with offline fallbacks ----------
   async function doStart() {
-    const lastProjectId = localStorage.getItem("lastProjectId");
-    if (!lastProjectId) {
-      setError("Choose project in main app first");
-      setTimeout(() => setError(""), 4000);
-      return;
-    }
-
-    const now = new Date();
-    const tempId = "temp-" + Date.now();
-    const optimisticSession = {
-      _id: tempId,
-      status: "active",
-      currentStart: now.toISOString(),
-      createdAt: now.toISOString(),
-      projectId: lastProjectId,
-      projectName: "Project",
-      accumulatedMinutes: 0,
-      totalMinutes: 0,
-    };
-
-    actionLockRef.current = { type: "start", tempId, session: optimisticSession };
-    setActiveSession(optimisticSession);
-    activeSessionRef.current = optimisticSession;
-    clearTicker();
-    const tick = () => setElapsed(Math.max(0, Date.now() - now.getTime()));
-    tick();
-    timerRef.current = setInterval(tick, 500);
-
-    try {
-      const res = await api("/api/work-sessions/start", {
-        method: "POST",
-        token: auth.token,
-        body: { projectId: lastProjectId },
-      });
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-      if (res && res._id) {
-        actionLockRef.current = null;
-        setActiveSession(res);
-        activeSessionRef.current = res;
+    return enqueueSessionOp(async () => {
+      const lastProjectId = localStorage.getItem("lastProjectId");
+      if (!lastProjectId) {
+        setError("Choose project in main app first");
+        setTimeout(() => setError(""), 4000);
+        return;
       }
-    } catch (e) {
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        const offSess = offlineManager.startOfflineSession({
-          projectId: lastProjectId,
-          projectName: "Project",
+
+      const now = new Date();
+      const tempId = "temp-" + Date.now();
+      const optimisticSession = {
+        _id: tempId,
+        status: "active",
+        currentStart: now.toISOString(),
+        createdAt: now.toISOString(),
+        projectId: lastProjectId,
+        projectName: "Project",
+        accumulatedMinutes: 0,
+        totalMinutes: 0,
+      };
+
+      actionLockRef.current = { type: "start", tempId, session: optimisticSession };
+      setActiveSession(optimisticSession);
+      activeSessionRef.current = optimisticSession;
+      clearTicker();
+      const tick = () => setElapsed(Math.max(0, Date.now() - now.getTime()));
+      tick();
+      timerRef.current = setInterval(tick, 500);
+
+      try {
+        const res = await api("/api/work-sessions/start", {
+          method: "POST",
+          token: auth.token,
+          body: { projectId: lastProjectId },
         });
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+        if (res && res._id) {
+          actionLockRef.current = null;
+          setActiveSession(res);
+          activeSessionRef.current = res;
+        }
+      } catch (e) {
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          const offSess = offlineManager.startOfflineSession({
+            projectId: lastProjectId,
+            projectName: "Project",
+          });
+          actionLockRef.current = null;
+          setActiveSession(offSess);
+          activeSessionRef.current = offSess;
+          setIsOffline(true);
+        } else {
+          clearTicker();
+          setActiveSession(null);
+          activeSessionRef.current = null;
+          setElapsed(0);
+          setError(e?.message || "Failed to start");
+        }
+      } finally {
         actionLockRef.current = null;
-        setActiveSession(offSess);
-        activeSessionRef.current = offSess;
-        setIsOffline(true);
-      } else {
-        clearTicker();
-        setActiveSession(null);
-        activeSessionRef.current = null;
-        setElapsed(0);
-        setError(e?.message || "Failed to start");
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessions();
       }
-    } finally {
-      actionLockRef.current = null;
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessions();
-    }
+    });
   }
 
   async function doPause() {
-    pauseCooldownRef.current = Date.now() + 2000; // 2s cooldown so clicking pause doesn't immediately auto-resume
-    const cur = activeSessionRef.current || activeSession;
-    if (cur) {
+    return enqueueSessionOp(async () => {
+      pauseCooldownRef.current = Date.now() + 2000; // 2s cooldown so clicking pause doesn't immediately auto-resume
+      const cur = activeSessionRef.current || activeSession;
+      if (!cur || cur.status !== "active") return;
+
       const additionalMins = cur.currentStart
         ? Math.max(0, (Date.now() - new Date(cur.currentStart).getTime()) / 60000)
         : 0;
@@ -572,97 +634,114 @@ function EmployeeOverlayWidget({ auth }) {
       setElapsed(Math.max(0, newAccumulated * 60000));
       setActiveSession(pausedSess);
       activeSessionRef.current = pausedSess;
-    }
 
-    try {
-      await api("/api/work-sessions/pause", {
-        method: "POST",
-        token: auth.token,
-      });
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-    } catch (e) {
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        offlineManager.pauseOfflineSession(cur);
-        setIsOffline(true);
+      try {
+        await api("/api/work-sessions/pause", {
+          method: "POST",
+          token: auth.token,
+          body: { sessionId: cur._id },
+        });
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+      } catch (e) {
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          offlineManager.pauseOfflineSession(cur);
+          setIsOffline(true);
+        }
+      } finally {
+        actionLockRef.current = null;
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessions();
       }
-    } finally {
-      actionLockRef.current = null;
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessions();
-    }
+    });
   }
 
   async function doResume() {
-    pauseCooldownRef.current = 0;
-    const cur = activeSessionRef.current || activeSession;
-    if (cur) {
+    return enqueueSessionOp(async () => {
+      pauseCooldownRef.current = 0;
+      let cur = activeSessionRef.current || activeSession;
+      const todayStr = getTodayYMD();
+      if (!cur) {
+        cur = (sessionsRef.current || []).find((s) => s.status === "paused" && s.date === todayStr);
+      }
+      if (!cur) return;
+
       const resumedSess = {
         ...cur,
         status: "active",
-        currentStart: new Date().toISOString(),
+        currentStart: cur.currentStart || new Date().toISOString(),
       };
       actionLockRef.current = { type: "resume", sessionId: cur._id, session: resumedSess };
       setActiveSession(resumedSess);
       activeSessionRef.current = resumedSess;
       clearTicker();
       const baseMs = Math.max(0, (cur.accumulatedMinutes || 0) * 60000);
-      const start = Date.now();
+      const start = new Date(resumedSess.currentStart).getTime();
       const tick = () => setElapsed(baseMs + Math.max(0, Date.now() - start));
       tick();
       timerRef.current = setInterval(tick, 500);
-    }
 
-    try {
-      await api("/api/work-sessions/resume", {
-        method: "POST",
-        token: auth.token,
-      });
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-    } catch (e) {
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        offlineManager.resumeOfflineSession(cur);
-        setIsOffline(true);
+      try {
+        const res = await api("/api/work-sessions/resume", {
+          method: "POST",
+          token: auth.token,
+          body: { sessionId: cur._id },
+        });
+        if (res && res._id && (!cur || cur._id !== res._id)) {
+          setActiveSession(res);
+          activeSessionRef.current = res;
+        }
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+      } catch (e) {
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          offlineManager.resumeOfflineSession(cur);
+          setIsOffline(true);
+        }
+      } finally {
+        actionLockRef.current = null;
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessions();
       }
-    } finally {
-      actionLockRef.current = null;
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessions();
-    }
+    });
   }
 
   async function doStop() {
-    const cur = activeSessionRef.current || activeSession;
-    actionLockRef.current = { type: "stop", sessionId: cur?._id };
-    clearTicker();
-    setActiveSession(null);
-    activeSessionRef.current = null;
-    setElapsed(0);
+    return enqueueSessionOp(async () => {
+      const cur = activeSessionRef.current || activeSession;
+      actionLockRef.current = { type: "stop", sessionId: cur?._id };
+      clearTicker();
+      setActiveSession(null);
+      activeSessionRef.current = null;
+      setElapsed(0);
 
-    try {
-      await api("/api/work-sessions/stop", {
-        method: "POST",
-        token: auth.token,
-      });
-      offlineManager.setOffline(false);
-      setIsOffline(false);
-    } catch (e) {
-      if (e?.isOffline || !navigator.onLine || e?.status === 0) {
-        offlineManager.stopOfflineSession("", cur);
-        setIsOffline(true);
+      try {
+        await api("/api/work-sessions/stop", {
+          method: "POST",
+          token: auth.token,
+          body: { sessionId: cur?._id },
+        });
+        offlineManager.setOffline(false);
+        setIsOffline(false);
+      } catch (e) {
+        if (e?.isOffline || !navigator.onLine || e?.status === 0) {
+          offlineManager.stopOfflineSession("", cur);
+          setIsOffline(true);
+        }
+      } finally {
+        actionLockRef.current = null;
+        window.worktracker?.notifySessionsChanged?.();
+        loadSessions();
       }
-    } finally {
-      actionLockRef.current = null;
-      window.worktracker?.notifySessionsChanged?.();
-      loadSessions();
-    }
+    });
   }
 
   // ---------- state flags / primary button ----------
-  const hasRunning = activeSession?.status === "active";
-  const hasPaused = activeSession?.status === "paused";
-  const anyCurrent = Boolean(activeSession);
+  const todayStr = getTodayYMD();
+  const isTodaySession = activeSession?.date === todayStr;
+  const hasRunning = activeSession?.status === "active" && isTodaySession;
+  const hasPaused = activeSession?.status === "paused" && isTodaySession;
+  const anyCurrent = Boolean(activeSession && isTodaySession);
   const lastProjectId = localStorage.getItem("lastProjectId");
 
   const primaryDisabled = !hasRunning && !hasPaused && !lastProjectId;

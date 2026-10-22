@@ -1,6 +1,15 @@
 // frontend/src/components/Admin/DailyReport/CompanyHoursTable.jsx
 import React from "react";
-import { Building2, FolderKanban, FileSpreadsheet, ChevronUp, ChevronDown } from "lucide-react";
+import {
+  Building2,
+  FolderKanban,
+  FileSpreadsheet,
+  ChevronUp,
+  ChevronDown,
+  Clock,
+  Users,
+  CheckCircle2,
+} from "lucide-react";
 import { formatHHMMSS } from "./reportHelpers.js";
 
 export default function CompanyHoursTable({
@@ -11,30 +20,47 @@ export default function CompanyHoursTable({
   setExpandedCompany,
   exportCompanyExcel,
 }) {
+  const totalMinutesAll = (companiesTree || []).reduce(
+    (acc, c) => acc + (c.totalMinutes || 0),
+    0
+  );
+
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-xs">
+      {/* Header Bar */}
+      <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between bg-gradient-to-r from-white via-slate-50/50 to-white">
         <div className="flex items-center gap-3">
-          <h3 className="text-base font-bold text-slate-900">
-            Company Working Hours
-          </h3>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-            {companiesTree.length} Companies
-          </span>
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-2xs">
+            <Building2 className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-slate-900">
+                Company Working Hours
+              </h3>
+              <span className="rounded-full bg-indigo-50 border border-indigo-200/60 px-2.5 py-0.5 text-xs font-extrabold text-indigo-700">
+                {companiesTree.length} {companiesTree.length === 1 ? "Company" : "Companies"}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Aggregated team hours and project rollups by client and organization
+            </p>
+          </div>
         </div>
 
         <button
           onClick={exportCompanyExcel}
-          className="inline-flex h-10 items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 cursor-pointer"
+          className="inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700 hover:shadow-sm cursor-pointer shrink-0"
         >
           <FileSpreadsheet className="h-4 w-4" />
           <span>Export Company Report (Excel)</span>
         </button>
       </div>
 
+      {/* Main Table */}
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <thead className="bg-slate-50/90 border-b border-slate-200/80 text-[11px] font-bold uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-5 py-3.5">Company Name</th>
               <th className="px-5 py-3.5">Projects Count</th>
@@ -49,41 +75,71 @@ export default function CompanyHoursTable({
           <tbody className="divide-y divide-slate-100">
             {companiesTree.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-16 text-center text-slate-400">
-                  {loading ? "Loading company hours…" : "No company work records found."}
+                <td colSpan={5} className="px-6 py-16 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3">
+                    <Building2 className="h-6 w-6" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-700">
+                    {loading ? "Loading company hours…" : "No company work records found"}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {loading ? "Calculating rollups..." : "Try selecting a broader date range or resetting filters."}
+                  </p>
                 </td>
               </tr>
             )}
 
             {companiesTree.map((c) => {
               const isOpen = expandedCompany[c.companyName];
+              const hoursVal = unit === "hours"
+                ? Math.round((c.totalMinutes / 60) * 100) / 100
+                : Math.round(c.totalMinutes);
 
               return (
                 <React.Fragment key={c.companyName}>
-                  <tr className="transition hover:bg-slate-50/80">
-                    <td className="px-5 py-4 font-bold text-slate-900">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-slate-400" />
-                        <span>{c.companyName}</span>
+                  <tr className={`transition-colors duration-150 ${isOpen ? "bg-slate-50/90" : "hover:bg-slate-50/70"}`}>
+                    {/* Company Name */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-700 border border-indigo-100/80 shadow-2xs font-bold text-xs">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 block tracking-tight">
+                            {c.companyName}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            {c.projects.length} associated {c.projects.length === 1 ? "project" : "projects"}
+                          </span>
+                        </div>
                       </div>
                     </td>
 
+                    {/* Projects Count */}
                     <td className="px-5 py-4">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
-                        {c.projects.length} {c.projects.length === 1 ? "project" : "projects"}
+                      <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+                        <FolderKanban className="h-3.5 w-3.5 text-slate-400" />
+                        <span>{c.projects.length} {c.projects.length === 1 ? "Project" : "Projects"}</span>
                       </span>
                     </td>
 
-                    <td className="px-5 py-4 font-extrabold text-blue-700">
-                      {unit === "hours"
-                        ? Math.round((c.totalMinutes / 60) * 100) / 100
-                        : Math.round(c.totalMinutes)}
+                    {/* Total Hours / Mins */}
+                    <td className="px-5 py-4">
+                      <div className="inline-flex items-center gap-1 rounded-xl bg-blue-50 border border-blue-200/60 px-3 py-1 text-xs font-black text-blue-800">
+                        <span>{hoursVal}</span>
+                        <span className="text-[10px] font-bold text-blue-600">{unit === "hours" ? "hrs" : "min"}</span>
+                      </div>
                     </td>
 
-                    <td className="px-5 py-4 font-mono font-semibold text-slate-700">
-                      {formatHHMMSS(c.totalMinutes)}
+                    {/* Elapsed Time */}
+                    <td className="px-5 py-4">
+                      <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200/60 px-2.5 py-1 rounded-lg">
+                        <Clock className="h-3 w-3 text-slate-400" />
+                        <span>{formatHHMMSS(c.totalMinutes)}</span>
+                      </span>
                     </td>
 
+                    {/* Details Toggle Button */}
                     <td className="px-5 py-4 text-right">
                       <button
                         onClick={() =>
@@ -92,7 +148,11 @@ export default function CompanyHoursTable({
                             [c.companyName]: !prev[c.companyName],
                           }))
                         }
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 cursor-pointer"
+                        className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+                          isOpen
+                            ? "bg-slate-900 text-white shadow-2xs"
+                            : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
+                        }`}
                       >
                         <span>{isOpen ? "Hide Projects" : "View Projects"}</span>
                         {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -102,41 +162,66 @@ export default function CompanyHoursTable({
 
                   {/* Expanded Projects under this company */}
                   {isOpen && (
-                    <tr className="bg-slate-50/60">
+                    <tr className="bg-slate-50/70 border-b border-slate-200/60">
                       <td colSpan={5} className="px-8 py-4">
-                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
+                          <div className="bg-slate-100/70 border-b border-slate-200/80 px-4 py-2.5 flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                              <FolderKanban className="h-3.5 w-3.5 text-blue-600" />
+                              Active Projects Under {c.companyName}
+                            </span>
+                            <span className="text-xs font-bold text-slate-500">
+                              {c.projects.length} total
+                            </span>
+                          </div>
+
                           <table className="min-w-full text-sm">
-                            <thead className="bg-slate-100/80 text-xs font-bold uppercase tracking-wider text-slate-500">
+                            <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                               <tr>
-                                <th className="px-4 py-3 text-left">Project Name</th>
-                                <th className="px-4 py-3 text-left">Team Contributors</th>
-                                <th className="px-4 py-3 text-left">
+                                <th className="px-4 py-2.5 text-left">Project Name</th>
+                                <th className="px-4 py-2.5 text-left">Team Contributors</th>
+                                <th className="px-4 py-2.5 text-left">
                                   Project Hours ({unit === "hours" ? "h" : "m"})
                                 </th>
-                                <th className="px-4 py-3 text-left">Elapsed Time</th>
+                                <th className="px-4 py-2.5 text-left">Elapsed Time</th>
                               </tr>
                             </thead>
 
                             <tbody className="divide-y divide-slate-100">
                               {c.projects.map((p) => (
-                                <tr key={p.projectId} className="hover:bg-slate-50">
+                                <tr key={p.projectId} className="hover:bg-slate-50/80 transition-colors">
                                   <td className="px-4 py-3 font-bold text-blue-700">
                                     <div className="flex items-center gap-1.5">
-                                      <FolderKanban className="h-3.5 w-3.5 text-blue-500" />
+                                      <FolderKanban className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                                       <span>{p.projectName}</span>
                                     </div>
                                   </td>
 
                                   <td className="px-4 py-3">
                                     <div className="flex flex-wrap gap-1.5">
-                                      {p.users.map((u) => (
-                                        <span
-                                          key={u.userId}
-                                          className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
-                                        >
-                                          {u.userName} ({formatHHMMSS(u.totalMinutes)})
-                                        </span>
-                                      ))}
+                                      {p.users.map((u) => {
+                                        const initials = (u.userName || "U")
+                                          .split(" ")
+                                          .filter(Boolean)
+                                          .slice(0, 2)
+                                          .map((n) => n[0].toUpperCase())
+                                          .join("");
+
+                                        return (
+                                          <span
+                                            key={u.userId}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
+                                          >
+                                            <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-extrabold text-slate-700">
+                                              {initials}
+                                            </span>
+                                            <span className="font-semibold">{u.userName}</span>
+                                            <span className="text-slate-400 font-mono text-[10px]">
+                                              ({formatHHMMSS(u.totalMinutes)})
+                                            </span>
+                                          </span>
+                                        );
+                                      })}
                                     </div>
                                   </td>
 
@@ -162,21 +247,26 @@ export default function CompanyHoursTable({
             })}
           </tbody>
 
+          {/* Table Footer */}
           {companiesTree.length > 0 && (
             <tfoot>
-              <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
+              <tr className="bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 font-extrabold text-slate-900 border-t-2 border-slate-200 text-xs">
                 <td className="px-5 py-4" colSpan={2}>
-                  Grand Total ({companiesTree.length} Companies)
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span>Grand Total ({companiesTree.length} Companies)</span>
+                  </div>
                 </td>
-                <td className="px-5 py-4 text-blue-700">
-                  {unit === "hours"
-                    ? Math.round((companiesTree.reduce((acc, c) => acc + (c.totalMinutes || 0), 0) / 60) * 100) / 100
-                    : Math.round(companiesTree.reduce((acc, c) => acc + (c.totalMinutes || 0), 0))}
+                <td className="px-5 py-4">
+                  <span className="inline-flex items-center gap-1 rounded-xl bg-slate-900 text-white px-3 py-1 font-black">
+                    {unit === "hours"
+                      ? Math.round((totalMinutesAll / 60) * 100) / 100
+                      : Math.round(totalMinutesAll)}{" "}
+                    {unit === "hours" ? "h" : "min"}
+                  </span>
                 </td>
-                <td className="px-5 py-4 font-mono">
-                  {formatHHMMSS(
-                    companiesTree.reduce((acc, c) => acc + (c.totalMinutes || 0), 0)
-                  )}
+                <td className="px-5 py-4 font-mono font-black text-slate-800">
+                  {formatHHMMSS(totalMinutesAll)}
                 </td>
                 <td />
               </tr>

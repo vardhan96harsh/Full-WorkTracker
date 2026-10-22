@@ -14,6 +14,8 @@ import {
   CheckCircle,
   Clock,
   Calendar,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { api } from "../../api.js";
 import ConfirmModal from "./ConfirmModal.jsx";
@@ -82,6 +84,7 @@ export default function Projects({ auth }) {
   const [date, setDate] = useState(() => getTodayYMD());
   const [status, setStatus] = useState("active");
   const [description, setDescription] = useState("");
+  const [isFormOpen, setIsFormOpen] = useState(true);
 
   // Filters State
   const [filterCompany, setFilterCompany] = useState("");
@@ -428,19 +431,24 @@ export default function Projects({ auth }) {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-3.5">
+      {/* ── COMPACT HEADER BANNER ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-              <FolderKanban className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100 shadow-2xs">
+              <FolderKanban className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-2xl font-bold tracking-tight text-slate-900">
-                Projects
-              </h3>
-              <p className="mt-0.5 text-sm text-slate-500">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold tracking-tight text-slate-900">
+                  Projects
+                </h3>
+                <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                  {metrics.total} Total
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
                 Create and organize client projects, project codes, and delivery statuses.
               </p>
             </div>
@@ -450,22 +458,22 @@ export default function Projects({ auth }) {
             <button
               onClick={refreshAll}
               disabled={loading}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 cursor-pointer shadow-2xs"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              <span>Refresh</span>
             </button>
           </div>
         </div>
 
         {/* Global Notifications */}
         {errorMsg && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700">
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-2 text-xs font-medium text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
             <span>{errorMsg}</span>
             <button
               onClick={() => setErrorMsg("")}
-              className="ml-auto text-red-500 hover:text-red-700"
+              className="ml-auto text-red-500 hover:text-red-700 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -473,201 +481,213 @@ export default function Projects({ auth }) {
         )}
 
         {successMsg && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-700">
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-xs font-medium text-emerald-700">
             <Check className="h-4 w-4 shrink-0 text-emerald-600" />
             <span>{successMsg}</span>
             <button
               onClick={() => setSuccessMsg("")}
-              className="ml-auto text-emerald-500 hover:text-emerald-700"
+              className="ml-auto text-emerald-500 hover:text-emerald-700 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         )}
 
-        {/* Summary Metric Cards */}
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5">
-            <div className="text-xs font-semibold text-slate-500">Total Projects</div>
-            <div className="mt-1 text-2xl font-bold text-slate-900">{metrics.total}</div>
+        {/* Compact Summary Metric Tiles */}
+        <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-slate-500">Total</span>
+            <span className="text-base font-bold text-slate-900">{metrics.total}</span>
           </div>
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3.5">
-            <div className="text-xs font-semibold text-emerald-700">Active Projects</div>
-            <div className="mt-1 text-2xl font-bold text-emerald-800">{metrics.active}</div>
+          <div className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-emerald-700">Active</span>
+            <span className="text-base font-bold text-emerald-800">{metrics.active}</span>
           </div>
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5">
-            <div className="text-xs font-semibold text-blue-700">Completed</div>
-            <div className="mt-1 text-2xl font-bold text-blue-800">{metrics.completed}</div>
+          <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-blue-700">Completed</span>
+            <span className="text-base font-bold text-blue-800">{metrics.completed}</span>
           </div>
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-3.5">
-            <div className="text-xs font-semibold text-amber-700">On Hold</div>
-            <div className="mt-1 text-2xl font-bold text-amber-800">{metrics.hold}</div>
+          <div className="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50/50 px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-amber-700">On Hold</span>
+            <span className="text-base font-bold text-amber-800">{metrics.hold}</span>
           </div>
         </div>
       </div>
 
-      {/* Add New Project Card */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+      {/* ── COMPACT ADD NEW PROJECT CARD ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-2xs">
+        <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white">
-              <Plus className="h-4 w-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white shrink-0">
+              <Plus className="h-3.5 w-3.5" />
             </div>
-            <h4 className="text-base font-bold text-slate-900">Add New Project</h4>
+            <h4 className="text-sm font-bold text-slate-900">Add New Project</h4>
           </div>
-          <span className="text-xs text-slate-400">* Required fields</span>
-        </div>
-
-        <form onSubmit={add}>
-          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Company Select */}
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Company *
-              </label>
-              <select
-                value={company}
-                onChange={(e) => {
-                  const newCompanyId = e.target.value;
-                  setCompany(newCompanyId);
-                  const compObj = companies.find((c) => c._id === newCompanyId);
-                  if (compObj) {
-                    setCode(getNextProjectCode(compObj.name, items));
-                  } else {
-                    setCode("");
-                  }
-                }}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              >
-                <option value="">Select Company</option>
-                {companies.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Category Select */}
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Category *
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              >
-                <option value="">Select Category</option>
-                {categories.map((g) => (
-                  <option key={g._id} value={g._id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Project Name */}
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Project Name *
-              </label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Compliance Training"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              />
-            </div>
-
-            {/* Project Code */}
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700">
-                  Project Code
-                </label>
-                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600">
-                  Auto-generated
-                </span>
-              </div>
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="e.g. PRJ-001"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white"
-              />
-            </div>
-
-            {/* Date */}
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700">
-                  Date *
-                </label>
-                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                  Default Today
-                </span>
-              </div>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              />
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Initial Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              >
-                <option value="active">Active</option>
-                <option value="hold">On Hold</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            {/* Description */}
-            <div className="lg:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Description / Scope
-              </label>
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief summary or scope of deliverables…"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 flex justify-end">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-400 hidden sm:inline">* Required fields</span>
             <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-blue-600 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              type="button"
+              onClick={() => setIsFormOpen(!isFormOpen)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer px-2 py-0.5 rounded-lg hover:bg-slate-100"
             >
-              <Plus className="h-4 w-4" />
-              <span>Add Project</span>
+              <span>{isFormOpen ? "Collapse" : "Expand"}</span>
+              {isFormOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
           </div>
-        </form>
+        </div>
+
+        {isFormOpen && (
+          <form onSubmit={add} className="pt-1">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Company Select */}
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-600">
+                  Company *
+                </label>
+                <select
+                  value={company}
+                  onChange={(e) => {
+                    const newCompanyId = e.target.value;
+                    setCompany(newCompanyId);
+                    const compObj = companies.find((c) => c._id === newCompanyId);
+                    if (compObj) {
+                      setCode(getNextProjectCode(compObj.name, items));
+                    } else {
+                      setCode("");
+                    }
+                  }}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                >
+                  <option value="">Select Company</option>
+                  {companies.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Select */}
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-600">
+                  Category *
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                >
+                  <option value="">Select Category</option>
+                  {categories.map((g) => (
+                    <option key={g._id} value={g._id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Project Name */}
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-600">
+                  Project Name *
+                </label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Compliance Training"
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                />
+              </div>
+
+              {/* Project Code */}
+              <div>
+                <div className="mb-0.5 flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-slate-600">
+                    Project Code
+                  </label>
+                  <span className="rounded bg-blue-50 px-1.5 py-0.2 text-[9px] font-semibold text-blue-600">
+                    Auto-generated
+                  </span>
+                </div>
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="e.g. PRJ-001"
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-medium outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <div className="mb-0.5 flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-slate-600">
+                    Date *
+                  </label>
+                  <span className="rounded bg-emerald-50 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-600">
+                    Default Today
+                  </span>
+                </div>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                />
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-600">
+                  Initial Status
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                >
+                  <option value="active">Active</option>
+                  <option value="hold">On Hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div className="lg:col-span-2">
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-600">
+                  Description / Scope
+                </label>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief summary or scope of deliverables…"
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add Project</span>
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
-      {/* Filter Bar */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      {/* ── COMPACT FILTER BAR ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:px-3 sm:py-2 shadow-2xs">
+        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
           {/* Company Filter */}
           <select
             value={filterCompany}
             onChange={(e) => setFilterCompany(e.target.value)}
-            className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white"
+            className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
           >
             <option value="">All Companies</option>
             {companies.map((c) => (
@@ -681,7 +701,7 @@ export default function Projects({ auth }) {
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white"
+            className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
           >
             <option value="">All Categories</option>
             {categories.map((g) => (
@@ -695,7 +715,7 @@ export default function Projects({ auth }) {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white"
+            className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
           >
             <option value="">All Statuses</option>
             <option value="active">Active</option>
@@ -706,20 +726,20 @@ export default function Projects({ auth }) {
 
           {/* Search Query */}
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search by project, code, company…"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
+              className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-8 pr-7 text-xs outline-none transition focus:border-blue-500 focus:bg-white shadow-2xs"
             />
             {q && (
               <button
                 type="button"
                 onClick={() => setQ("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
@@ -733,7 +753,7 @@ export default function Projects({ auth }) {
                 setFilterStatus("");
                 setQ("");
               }}
-              className="inline-flex h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-100 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-200 cursor-pointer shadow-2xs"
             >
               <X className="h-3.5 w-3.5" />
               Reset
@@ -743,11 +763,11 @@ export default function Projects({ auth }) {
       </div>
 
       {/* Project Table */}
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div className="flex items-center gap-2">
-            <h4 className="text-base font-bold text-slate-900">Project Directory</h4>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+            <h4 className="text-sm font-bold text-slate-900">Project Directory</h4>
+            <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">
               {filtered.length} {filtered.length === 1 ? "project" : "projects"}
             </span>
           </div>

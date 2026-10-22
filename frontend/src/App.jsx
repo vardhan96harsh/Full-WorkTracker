@@ -77,15 +77,26 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (auth) localStorage.setItem("auth", JSON.stringify(auth));
-    else localStorage.removeItem("auth");
+    if (auth) {
+      try {
+        const stored = JSON.parse(localStorage.getItem("auth") || "null");
+        // Avoid overwriting newer refreshed token in storage
+        if (!stored || stored.token === auth.token || !stored.token) {
+          localStorage.setItem("auth", JSON.stringify(auth));
+        }
+      } catch {
+        localStorage.setItem("auth", JSON.stringify(auth));
+      }
+    } else {
+      localStorage.removeItem("auth");
+    }
 
     const isLoggedIn = !!auth && !!auth.token;
     const role = (auth?.user?.role || "").toLowerCase() || null;
     window.worktracker?.setOverlayEnabled?.(isLoggedIn, role);
   }, [auth]);
 
-  // 🔄 Sync auth state whenever tokens are silently refreshed
+  // 🔄 Sync auth state whenever tokens are silently refreshed or updated across windows
   useEffect(() => {
     const handleRefreshed = (e) => {
       if (e.detail) setAuth(e.detail);
@@ -93,13 +104,24 @@ export default function App() {
     const handleExpired = () => {
       setAuth(null);
     };
+    const handleStorage = (e) => {
+      if (e.key === "auth") {
+        try {
+          setAuth(JSON.parse(e.newValue || "null"));
+        } catch {
+          setAuth(null);
+        }
+      }
+    };
 
     window.addEventListener("auth:refreshed", handleRefreshed);
     window.addEventListener("auth:expired", handleExpired);
+    window.addEventListener("storage", handleStorage);
 
     return () => {
       window.removeEventListener("auth:refreshed", handleRefreshed);
       window.removeEventListener("auth:expired", handleExpired);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
@@ -143,7 +165,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      {userRole === "admin" ? (
+      {userRole === "admin" || userRole === "superadmin" ? (
         <Admin auth={auth} onLogout={handleLogout} />
       ) : (
         <>

@@ -4,6 +4,44 @@
 
 ---
 
+## [Version 2026.10.6] — 21 October 2026 (Project Plan Exports, 7-Phase Storyline Curriculum & Gantt Enhancements)
+
+### 🚀 Highlights & Features
+1. **Comprehensive Project Plan Exporter**:
+   - Built executive multi-sheet Excel workbook export (`.xlsx`) via `xlsx-js-style` with formatted tabs for Production KPIs, Task Breakdown (WBS), and Gantt Timeline Schedule.
+   - Built instant RFC-4180 CSV exports for Task Breakdown Grid (WBS), Gantt Timeline Schedule, and Production KPIs & Stage Pipelining.
+   - Added modular `ExportPlanDropdown` accessible across the main action bar, Gantt toolbar, Task Table, Stage Pipelining view, and Plans Dashboard.
+
+2. **Articulate Storyline 360 7-Phase Curriculum Workflow**:
+   - Streamlined Phase 1 to standard Kickoff & Requirement Analysis tasks.
+   - Dedicated Phase 2 Script Development & Client Sign-off.
+   - Phase 3 Client Asset Approval Gate and Phase 4 Conditional High-Level Design (HLD) Prototype.
+   - Integrated full 7-phase production timeline scheduling with parallel tracks and milestone gates.
+
+3. **Gantt Chart Enhancements**:
+   - Robust assignee full-name resolution across all data formats.
+   - Responsive multi-width task list sidebar (Compact 320px, Standard 440px, Wide 560px) to comfortably display full names and duration badges.
+
+---
+
+## [Version 2026.10.5] — 13 October 2026 (Smart AI Planner, My Tasks & Dashboard UI Polish)
+
+### 🚀 Highlights & Features
+1. **AI-Assisted Smart Project Planner**:
+   - Integrated full prompt-based and template-based project breakdown with complexity estimation algorithms.
+   - Added person assignment per task with intelligent role & developer name resolution.
+   - Seamless task sync from project plans into active tasks with status management.
+
+2. **UI Modernization & Experience Polish**:
+   - **User Dashboard (`WorkTimer.jsx`)**: Compacted card vertical footprint, eliminated excessive padding and removed harsh blue gradient on Today Total card while strictly preserving high-visibility green Start/Resume and red Stop action buttons.
+   - **My Tasks View (`MyTasks.jsx`)**: Redesigned UI with modern, clean light aesthetic replacing dark tones, intuitive status toggles, and direct integration with Work Timer.
+
+3. **Backend Robustness & Isolation**:
+   - Strict inactive employee isolation across all reports, user dropdowns, and manual remark dialogs.
+   - Comprehensive End-to-End automated validation suite with 100% pass rate.
+
+---
+
 ## [Version 2026.10.4] — 8 October 2026 (Offline Sync & Timer Fix)
 
 ### 🚀 Highlights & Problem Fixes

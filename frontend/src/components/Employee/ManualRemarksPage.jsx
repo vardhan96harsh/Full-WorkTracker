@@ -772,8 +772,16 @@ export default function ManualRemarksPage({ auth }) {
                     </td>
 
                     {/* Remark / Text */}
-                    <td className="px-5 py-4 max-w-xs text-xs font-medium text-slate-800">
-                      <p className="line-clamp-2">{r.text}</p>
+                    <td className="px-5 py-4 min-w-[240px] max-w-lg text-xs font-medium text-slate-800">
+                      {r.customTask && (
+                        <div className="mb-1 font-bold text-slate-900 break-words">
+                          <span className="text-slate-500 font-semibold">Task: </span>
+                          {r.customTask}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words leading-relaxed text-slate-800">
+                        {r.text || (r.customTask ? "" : "No remark")}
+                      </div>
                     </td>
 
                     {/* Time */}

@@ -41,19 +41,30 @@ export const offlineManager = {
       const raw = localStorage.getItem(WT_OFFLINE_SESSION_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (parsed && (parsed.accumulatedMinutes > 1440 || parsed.totalMinutes > 1440)) {
-        let segMs = 0;
-        if (Array.isArray(parsed.segments)) {
-          for (const seg of parsed.segments) {
-            if (seg.start && seg.end) {
-              const st = new Date(seg.start).getTime();
-              const et = new Date(seg.end).getTime();
-              if (et > st) segMs += (et - st);
+      if (parsed) {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        if (parsed.date && parsed.date !== todayStr && (parsed.status === "paused" || parsed.status === "active")) {
+          parsed.status = "stopped";
+          parsed.currentStart = null;
+          localStorage.setItem(WT_OFFLINE_SESSION_KEY, JSON.stringify(parsed));
+        }
+
+        if (parsed.accumulatedMinutes > 1440 || parsed.totalMinutes > 1440) {
+          let segMs = 0;
+          if (Array.isArray(parsed.segments)) {
+            for (const seg of parsed.segments) {
+              if (seg.start && seg.end) {
+                const st = new Date(seg.start).getTime();
+                const et = new Date(seg.end).getTime();
+                if (et > st) segMs += (et - st);
+              }
             }
           }
+          parsed.accumulatedMinutes = Math.min(1440, Math.round((segMs / 60000) * 100) / 100);
+          parsed.totalMinutes = parsed.accumulatedMinutes;
         }
-        parsed.accumulatedMinutes = Math.min(1440, Math.round((segMs / 60000) * 100) / 100);
-        parsed.totalMinutes = parsed.accumulatedMinutes;
       }
       return parsed;
     } catch {
