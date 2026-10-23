@@ -4,6 +4,22 @@
 
 ---
 
+## [Version 2026.10.23] — 23 October 2026 (Project Planner Payload Compaction, 50MB Limit & Installer Packaging)
+
+### 🚀 Highlights & Release Summary
+1. **Desktop Installer Packaging**:
+   - Packaged and code-signed Windows NSIS Installer and Portable Executable for version `2026.10.23`.
+   - Updated renderer bundle with compact payload serializers and clean HTML error handling.
+
+2. **Project Planner Payload Compaction (`PayloadTooLargeError` Prevention)**:
+   - Sanitized Project Planner save payload (`sanitizePlanPayload()`) to strip heavy populated objects, reducing payload size by ~85%.
+   - Increased Express JSON and URL-encoded body limit to `50mb` on the backend server.
+
+3. **User-Friendly Error Handling**:
+   - Added regex HTML parser to catch and decode raw Express 413/502 HTML pages into clean error alerts.
+
+---
+
 ## [Version 2026.10.13] — 22 October 2026 (React Error #31 Fix & Admin Alert Polish)
 
 ### 🚀 Highlights & Release Summary
