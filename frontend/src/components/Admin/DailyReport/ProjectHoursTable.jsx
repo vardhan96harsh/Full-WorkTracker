@@ -256,15 +256,24 @@ export default function ProjectHoursTable({
                                               Dates Worked:
                                             </span>
                                             <div className="flex flex-wrap gap-2">
-                                              {u.dates.map((d, i) => (
-                                                <span
-                                                  key={i}
-                                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 shadow-2xs"
-                                                >
-                                                  <Calendar className="h-3 w-3 text-slate-400 font-sans" />
-                                                  <span>{d}</span>
-                                                </span>
-                                              ))}
+                                              {u.dates.map((d, i) => {
+                                                const dateStr = typeof d === "object" && d !== null ? d.date : String(d || "");
+                                                const minsVal = typeof d === "object" && d !== null ? Number(d.minutes || 0) : 0;
+                                                return (
+                                                  <span
+                                                    key={i}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 shadow-2xs"
+                                                  >
+                                                    <Calendar className="h-3 w-3 text-slate-400 font-sans" />
+                                                    <span>{dateStr}</span>
+                                                    {minsVal > 0 && (
+                                                      <span className="text-slate-500 font-medium font-sans text-[11px]">
+                                                        ({formatHHMMSS(minsVal)})
+                                                      </span>
+                                                    )}
+                                                  </span>
+                                                );
+                                              })}
                                             </div>
                                           </div>
                                         </td>

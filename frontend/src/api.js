@@ -284,10 +284,19 @@ export async function api(path, { method = "GET", body, token, headers, _isRetry
   }
 
   if (!res.ok) {
-    const msg =
+    let msg =
       typeof data === "object"
         ? data.error || data.message || JSON.stringify(data)
         : data;
+
+    if (typeof msg === "string" && (msg.includes("<!DOCTYPE") || msg.includes("<html") || msg.includes("<pre>"))) {
+      const preMatch = msg.match(/<pre>([\s\S]*?)<\/pre>/i);
+      if (preMatch && preMatch[1]) {
+        msg = preMatch[1].replace(/<br\s*[\/]?>/gi, "\n").replace(/&nbsp;/gi, " ").trim().split("\n")[0];
+      } else {
+        msg = `Server Error (${res.status}: ${res.statusText || "Request failed"})`;
+      }
+    }
 
     const error = new Error(msg || `HTTP ${res.status}`);
     error.status = res.status;

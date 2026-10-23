@@ -92,6 +92,21 @@ export default function Admin({ auth, onLogout }) {
     return () => window.removeEventListener("wt:adminPauseAlertsChanged", handleAlertsToggle);
   }, []);
 
+  // 🧭 Listen for external tab navigation (e.g. from pause alert popup "View Live Status")
+  useEffect(() => {
+    const handleNav = (e) => {
+      if (e?.detail?.tab) setTab(e.detail.tab);
+    };
+    window.addEventListener("wt:adminNavigateTab", handleNav);
+    const offIpc = window.worktracker?.onNavigateTab?.((targetTab) => {
+      if (targetTab) setTab(targetTab);
+    });
+    return () => {
+      window.removeEventListener("wt:adminNavigateTab", handleNav);
+      if (typeof offIpc === "function") offIpc();
+    };
+  }, []);
+
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem("wt_theme") || "light";
@@ -282,7 +297,17 @@ export default function Admin({ auth, onLogout }) {
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400 text-[10px]">Bottom-right popup alert</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent("wt:triggerTestAlert"));
+                        setIsAlertsMenuOpen(false);
+                      }}
+                      className="text-amber-600 hover:text-amber-700 font-bold hover:underline cursor-pointer text-[11px] flex items-center gap-1"
+                      title="Trigger sample popup to preview its look"
+                    >
+                      <span>⚡ Preview Alert</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsAlertsMenuOpen(false)}

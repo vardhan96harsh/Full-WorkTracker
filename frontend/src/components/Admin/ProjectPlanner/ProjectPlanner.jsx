@@ -37,6 +37,126 @@ const PROJECT_VIEWS = [
   { key: "wbs", label: "Task Breakdown Grid (WBS)", icon: ListTodo },
 ];
 
+/**
+ * Lightweight serializer to prevent PayloadTooLargeError when saving large multi-module plans.
+ * Strips heavy nested populated objects (full user profiles, redundant permissions, etc.)
+ * keeping the payload extremely compact (~15-30 KB instead of megabytes).
+ */
+function sanitizePlanPayload(plan) {
+  if (!plan) return {};
+
+  const cleanAssignedTeam = Array.isArray(plan.assignedTeam)
+    ? plan.assignedTeam.map((tm) => {
+        const u = tm.user;
+        const userId = typeof u === "object" && u ? (u._id || u.id) : u;
+        return {
+          user: userId,
+          name: tm.name || (typeof u === "object" ? u?.name : ""),
+          email: tm.email || (typeof u === "object" ? u?.email : ""),
+          roleCategory: tm.roleCategory || "",
+          designation: tm.designation || "",
+          dailyHours: Number(tm.dailyHours) || 7,
+        };
+      })
+    : [];
+
+  const cleanTasks = Array.isArray(plan.tasks)
+    ? plan.tasks.map((t) => {
+        let cleanAssignedResource = null;
+        if (t.assignedResource) {
+          if (typeof t.assignedResource === "string") {
+            cleanAssignedResource = t.assignedResource;
+          } else {
+            const rawId = t.assignedResource._id || t.assignedResource.id || t.assignedResource.user;
+            cleanAssignedResource = {
+              id: rawId ? String(rawId) : undefined,
+              name: t.assignedResource.name || "",
+              roleCategory: t.assignedResource.roleCategory || t.roleCategory || "",
+            };
+          }
+        }
+
+        let cleanAssignedResources = [];
+        if (Array.isArray(t.assignedResources)) {
+          cleanAssignedResources = t.assignedResources.map((r) => {
+            if (typeof r === "string") return r;
+            const rId = r._id || r.id || r.user;
+            return {
+              id: rId ? String(rId) : undefined,
+              name: r.name || "",
+              roleCategory: r.roleCategory || "",
+            };
+          });
+        }
+
+        return {
+          id: t.id,
+          name: t.name,
+          phaseId: t.phaseId,
+          phaseName: t.phaseName,
+          role: t.role,
+          roleCategory: t.roleCategory,
+          assignedResource: cleanAssignedResource,
+          assignedResources: cleanAssignedResources,
+          startDate: t.startDate,
+          endDate: t.endDate,
+          durationWorkingDays: Number(t.durationWorkingDays) || 1,
+          hours: Number(t.hours) || 0,
+          allocatedHours: Number(t.allocatedHours) || 0,
+          actualUsedHours: Number(t.actualUsedHours) || 0,
+          dependencies: Array.isArray(t.dependencies) ? t.dependencies : [],
+          status: t.status || "Not Started",
+          isMilestone: Boolean(t.isMilestone),
+          isClientTask: Boolean(t.isClientTask),
+          isManualOverride: Boolean(t.isManualOverride),
+          criticalPath: Boolean(t.criticalPath),
+          slack: Number(t.slack) || 0,
+        };
+      })
+    : [];
+
+  const cleanPhases = Array.isArray(plan.phases)
+    ? plan.phases.map((ph) => ({
+        id: ph.id,
+        name: ph.name,
+        taskIds: Array.isArray(ph.taskIds) ? ph.taskIds : [],
+      }))
+    : [];
+
+  const pmId =
+    plan.projectManager?._id ||
+    plan.projectManager?.id ||
+    (typeof plan.projectManager === "string" ? plan.projectManager : null);
+
+  return {
+    projectId: plan.projectId || plan.project?._id || plan.project,
+    companyId: plan.companyId || plan.company?._id || plan.company,
+    clientName: plan.clientName || "",
+    projectType: plan.projectType || "storyline-360",
+    complexity: plan.complexity || "Level 2",
+    startPhaseId: plan.startPhaseId || null,
+    startPhaseName: plan.startPhaseName || null,
+    startDate: plan.startDate,
+    calculatedEndDate: plan.calculatedEndDate,
+    courseLengthMinutes: Number(plan.courseLengthMinutes) || 60,
+    moduleCount: Number(plan.moduleCount) || 4,
+    parallelPipelining: plan.parallelPipelining !== undefined ? Boolean(plan.parallelPipelining) : true,
+    includeHld: Boolean(plan.includeHld),
+    totalWorkingDays: Number(plan.totalWorkingDays) || 0,
+    totalCalendarDays: Number(plan.totalCalendarDays) || 0,
+    nonWorkingDays: Number(plan.nonWorkingDays) || 0,
+    estimatedEffortHours: Number(plan.estimatedEffortHours) || 0,
+    allocatedEffortHours: Number(plan.allocatedEffortHours) || 0,
+    actualUsedEffortHours: Number(plan.actualUsedEffortHours) || 0,
+    projectManager: pmId,
+    assignedTeam: cleanAssignedTeam,
+    phases: cleanPhases,
+    tasks: cleanTasks,
+    manualOverrides: plan.manualOverrides || {},
+    complexityConfig: plan.complexityConfig || null,
+  };
+}
+
 export default function ProjectPlanner({ auth, onOpenComplexityTab }) {
   const [plans, setPlans] = useState([]);
   const [currentPlan, setCurrentPlan] = useState(null);
@@ -211,7 +331,7 @@ export default function ProjectPlanner({ auth, onOpenComplexityTab }) {
       });
 
       // 3. Persist plan to backend (POST /api/project-plans)
-      const payload = {
+      const payload = sanitizePlanPayload({
         projectId: targetProjectId,
         companyId: formData.companyId,
         clientName: formData.clientName,
@@ -237,7 +357,7 @@ export default function ProjectPlanner({ auth, onOpenComplexityTab }) {
         tasks: generated.tasks,
         manualOverrides: generated.manualOverrides || {},
         complexityConfig,
-      };
+      });
 
       const savedPlan = await api("/api/project-plans", {
         method: "POST",
@@ -325,11 +445,11 @@ export default function ProjectPlanner({ auth, onOpenComplexityTab }) {
       await api("/api/project-plans", {
         method: "POST",
         token: auth.token,
-        body: {
+        body: sanitizePlanPayload({
           ...updatedPlan,
           projectId: updatedPlan.project?._id || updatedPlan.project,
           companyId: updatedPlan.company?._id || updatedPlan.company,
-        },
+        }),
       });
     } catch (err) {
       console.warn("Background plan status update failed:", err);

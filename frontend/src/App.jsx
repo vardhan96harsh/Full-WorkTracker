@@ -4,6 +4,7 @@ import Login from "./components/Login.jsx";
 import Admin from "./components/Admin/Admin.jsx";
 import Employee from "./components/Employee/Employee.jsx";
 import OverlayWidget from "./components/Employee/OverlayWidget.jsx";
+import PauseAlertPopup from "./components/Admin/PauseAlertPopup.jsx";
 import GlobalHeartbeat from "./components/GlobalHeartbeat";
 
 
@@ -156,6 +157,17 @@ export default function App() {
       <ErrorBoundary>
         <GlobalHeartbeat auth={auth} />
         <OverlayWidget />
+      </ErrorBoundary>
+    );
+
+  const isPausePopup =
+    typeof window !== "undefined" &&
+    window.location.hash.includes("/pause-popup");
+
+  if (isPausePopup)
+    return (
+      <ErrorBoundary>
+        <PauseAlertPopup />
       </ErrorBoundary>
     );
 

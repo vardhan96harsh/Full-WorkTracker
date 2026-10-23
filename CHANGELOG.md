@@ -4,6 +4,39 @@
 
 ---
 
+## [Version 2026.10.13] — 22 October 2026 (React Error #31 Fix & Admin Alert Polish)
+
+### 🚀 Highlights & Release Summary
+1. **Desktop Installer Packaging**:
+   - Packaged and code-signed Windows NSIS Installer: `Work Tracker Setup 2026.10.13.exe` (78.4 MB).
+   - Generated portable desktop release: `Work Tracker 2026.10.13.exe` (78.2 MB).
+   - Synchronized production frontend bundle (`index--7TjYNcQ.js`) into `electron/frontend-dist`.
+
+2. **React Invariant Error #31 Fix**:
+   - Resolved React error #31 (`object with keys {date, minutes}`) in `ProjectHoursTable.jsx` when expanding "Dates Worked" in Admin Daily Reports.
+   - Properly extracted date strings and formatted duration badges `(HH:MM:SS)` instead of rendering raw objects.
+
+3. **Admin Alert Polish**:
+   - Restructured paused session notification popup to display exclusively as a sleek, professional floating notification outside the main content panel with lighter aesthetics and subtle elevation.
+
+---
+
+## [Version 2026.10.8] — 22 October 2026 (End-to-End System Verification & Release Packaging)
+
+### 🚀 Highlights & Release Summary
+1. **Desktop Installer Packaging**:
+   - Packaged and code-signed Windows NSIS Installer: `Work Tracker Setup 2026.10.8.exe` (78.4 MB).
+   - Generated portable desktop release: `Work Tracker 2026.10.8.exe` (78.2 MB).
+   - Synchronized latest compiled production frontend bundle into `electron/frontend-dist`.
+
+2. **End-to-End System Verification Suite**:
+   - Verified 100% test pass rate across 8 comprehensive audit suites (75+ assertions).
+   - Validated Role-Based Access Control, Field-Level Privacy, Inactive Employee Isolation, and Token Authentication.
+   - Verified Real-Time Pause Alerts with automatic lunch break (2:00 PM – 3:00 PM IST) exclusion.
+   - Verified 7-Phase Storyline Curriculum schedule generation, complexity rules, and task synchronization.
+
+---
+
 ## [Version 2026.10.6] — 21 October 2026 (Project Plan Exports, 7-Phase Storyline Curriculum & Gantt Enhancements)
 
 ### 🚀 Highlights & Features
