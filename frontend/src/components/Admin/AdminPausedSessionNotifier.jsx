@@ -1,4 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import {
+  Clock,
+  X,
+  ChevronUp,
+  ChevronDown,
+  Volume2,
+  VolumeX,
+  FolderKanban,
+  ExternalLink,
+  AlertTriangle,
+} from "lucide-react";
 import { api } from "../../api.js";
 
 // Audio chime using Web Audio API (gentle harmonious double tone)
@@ -243,8 +254,173 @@ export default function AdminPausedSessionNotifier({ auth, onAlertCountChange })
     );
   };
 
-  // 🚫 Do not render a second popup inside the admin interface.
-  // The alert is displayed solely as a single, professional floating desktop popup OUTSIDE the window.
-  return null;
+  if (visibleAlerts.length === 0) return null;
+
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-50 w-96 max-w-[calc(100vw-2.5rem)] select-none font-sans antialiased animate-in fade-in slide-in-from-bottom-5 duration-200"
+      style={{ filter: "drop-shadow(0 10px 25px rgba(15, 23, 42, 0.15))" }}
+    >
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col shadow-xl">
+        {/* TOP BAR */}
+        <div className="px-3.5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100/80 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <AlertTriangle size={13} strokeWidth={2.5} />
+            </div>
+            <span className="text-xs font-bold text-slate-900 truncate">
+              Session Alert
+            </span>
+            <span className="bg-amber-500 text-white font-extrabold text-[10px] px-1.5 py-0.2 rounded-full leading-tight shrink-0">
+              {visibleAlerts.length}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Sound Mute Toggle */}
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={`p-1 rounded-md transition cursor-pointer ${
+                soundEnabled
+                  ? "text-slate-600 hover:text-slate-900 hover:bg-white/80"
+                  : "text-slate-400 hover:text-slate-600 hover:bg-white/80"
+              }`}
+              title={soundEnabled ? "Mute alert chime" : "Enable alert chime"}
+            >
+              {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+            </button>
+
+            {/* Minimize / Expand Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsMinimized((prev) => !prev)}
+              className="p-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-white/80 transition cursor-pointer"
+              title={isMinimized ? "Expand alerts" : "Minimize alerts"}
+            >
+              {isMinimized ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+
+            {/* Dismiss All */}
+            <button
+              type="button"
+              onClick={handleDismissAll}
+              className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-white/80 transition cursor-pointer"
+              title="Dismiss all"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+
+        {/* BODY - CLEAN NOTIFICATION CARDS */}
+        {!isMinimized ? (
+          <div className="p-2.5 space-y-2 max-h-64 overflow-y-auto bg-slate-50/50">
+            {visibleAlerts.map((alert) => {
+              const formattedTime = alert.pausedAt
+                ? new Date(alert.pausedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : null;
+
+              return (
+                <div
+                  key={alert.sessionId}
+                  className="bg-white p-2.5 rounded-xl border border-slate-200/90 shadow-2xs hover:border-amber-300 transition-colors relative"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {alert.employeeName ? alert.employeeName[0].toUpperCase() : "U"}
+                      </div>
+                      <span className="text-xs font-bold text-slate-900 truncate">
+                        {alert.employeeName}
+                      </span>
+                      {alert.employeeId && alert.employeeId !== "—" && (
+                        <span className="text-[9px] font-mono font-medium text-slate-500 bg-slate-100 px-1 py-0.2 rounded border border-slate-200 shrink-0">
+                          {alert.employeeId}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200"
+                        title={
+                          alert.lunchDeductedMinutes > 0
+                            ? `${alert.lunchDeductedMinutes}m lunch break excluded`
+                            : undefined
+                        }
+                      >
+                        <Clock size={10} className="text-amber-600" />
+                        {alert.pausedMinutes}m
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDismiss(alert.sessionId, e)}
+                        className="text-slate-400 hover:text-slate-700 p-0.5 rounded hover:bg-slate-100 transition cursor-pointer"
+                        title="Dismiss"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-600 gap-1.5">
+                    <div className="flex items-center gap-1 truncate">
+                      <FolderKanban size={11} className="text-slate-400 shrink-0" />
+                      <span className="truncate">
+                        <span className="text-slate-400">Project:</span>{" "}
+                        <span className="font-semibold text-slate-800">{alert.projectName}</span>
+                      </span>
+                    </div>
+                    {formattedTime && (
+                      <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                        {formattedTime}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-3.5 py-2 bg-amber-50/60 flex items-center justify-between text-xs text-amber-900 font-medium">
+            <span>
+              {visibleAlerts.length} session{visibleAlerts.length > 1 ? "s" : ""} paused &ge; 10m
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsMinimized(false)}
+              className="text-amber-700 font-bold hover:underline cursor-pointer text-[11px]"
+            >
+              Show details
+            </button>
+          </div>
+        )}
+
+        {/* FOOTER BAR */}
+        <div className="px-3.5 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+          <button
+            type="button"
+            onClick={handleViewLiveReport}
+            className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition cursor-pointer"
+          >
+            <span>View Live Report</span>
+            <ExternalLink size={10} />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDismissAll}
+            className="text-[11px] text-slate-400 hover:text-slate-700 font-semibold transition cursor-pointer"
+          >
+            Dismiss All
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
