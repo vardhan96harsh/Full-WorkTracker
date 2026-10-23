@@ -61,8 +61,31 @@ export default function GanttChart({ project, onEditTask }) {
   const [collapsedPhases, setCollapsedPhases] = useState(new Set());
   const [hoveredTask, setHoveredTask] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(440); // 320: compact, 440: standard, 560: wide
-
   const timelineContainerRef = useRef(null);
+  const leftListRef = useRef(null);
+  const isSyncingScroll = useRef(false);
+
+  const handleLeftScroll = (e) => {
+    if (isSyncingScroll.current) return;
+    if (timelineContainerRef.current) {
+      isSyncingScroll.current = true;
+      timelineContainerRef.current.scrollTop = e.target.scrollTop;
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false;
+      });
+    }
+  };
+
+  const handleRightScroll = (e) => {
+    if (isSyncingScroll.current) return;
+    if (leftListRef.current) {
+      isSyncingScroll.current = true;
+      leftListRef.current.scrollTop = e.target.scrollTop;
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false;
+      });
+    }
+  };
 
   const cellWidth = zoom === "day" ? 36 : zoom === "week" ? 22 : 12;
 
@@ -362,7 +385,7 @@ export default function GanttChart({ project, onEditTask }) {
       </div>
 
       {/* SPLIT GANTT BODY */}
-      <div className="flex flex-1 overflow-hidden" style={{ minHeight: "560px" }}>
+      <div className="flex flex-1 overflow-hidden" style={{ height: "calc(100vh - 275px)", minHeight: "560px", maxHeight: "880px" }}>
         {/* LEFT TASK LIST SIDEBAR */}
         <div
           style={{ width: `${sidebarWidth}px` }}
@@ -375,7 +398,11 @@ export default function GanttChart({ project, onEditTask }) {
           </div>
 
           {/* Task Rows */}
-          <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+          <div
+            ref={leftListRef}
+            onScroll={handleLeftScroll}
+            className="flex-1 overflow-y-auto divide-y divide-gray-100 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
             {phaseGroups.map((group) => {
               const isCollapsed = collapsedPhases.has(group.id);
               return (
@@ -455,12 +482,15 @@ export default function GanttChart({ project, onEditTask }) {
                 </div>
               );
             })}
+            {/* Bottom spacer so last row is never cramped */}
+            <div className="h-10 shrink-0" />
           </div>
         </div>
 
         {/* RIGHT TIMELINE CANVAS */}
         <div
           ref={timelineContainerRef}
+          onScroll={handleRightScroll}
           className="flex-1 overflow-x-auto overflow-y-auto bg-gray-50 relative"
         >
           <div style={{ width: `${Math.max(totalWidth, 800)}px` }} className="relative select-none min-h-full">
@@ -543,7 +573,7 @@ export default function GanttChart({ project, onEditTask }) {
             {showArrows && (
               <svg
                 className="absolute inset-0 pointer-events-none z-10"
-                style={{ top: "56px", width: "100%", height: "100%" }}
+                style={{ top: "56px", bottom: 0, width: "100%", height: "calc(100% - 56px)" }}
               >
                 <defs>
                   <marker
@@ -629,7 +659,7 @@ export default function GanttChart({ project, onEditTask }) {
                               onMouseLeave={() => setHoveredTask(null)}
                               onClick={() => onEditTask && onEditTask(t)}
                               title={`${t.name}${assigneeName ? `\nAssignee: ${assigneeName}` : ""}\nPhase: ${t.phaseName || ""}\nDuration: ${t.durationWorkingDays} days (${t.hours}h)\nDates: ${CalendarEngine.formatDisplayDate(t.startDate)} - ${CalendarEngine.formatDisplayDate(t.endDate)}`}
-                              className={`absolute h-8 rounded-lg shadow-xs cursor-pointer flex items-center px-2.5 text-white text-[11px] font-semibold transition hover:scale-[1.01] hover:brightness-110 z-10 ${
+                              className={`absolute h-8 rounded-lg shadow-xs cursor-pointer flex items-center px-2.5 text-white text-[11px] font-semibold transition hover:brightness-110 hover:shadow-md z-10 ${
                                 roleColor.bg
                               } ${
                                 t.criticalPath
@@ -670,66 +700,74 @@ export default function GanttChart({ project, onEditTask }) {
                   </div>
                 );
               })}
+              {/* Bottom spacer so last row is never cramped */}
+              <div className="h-10 shrink-0" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* HOVER TOOLTIP FLOATER */}
-      {hoveredTask && (
-        <div className="border-t border-gray-200 bg-gray-50/95 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-700 shadow-inner">
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-            <span className="font-bold text-gray-900 text-sm" title={hoveredTask.name}>
-              {hoveredTask.name}
-            </span>
-            {hoveredTask.phaseName && (
-              <span className="text-gray-500 text-xs flex items-center gap-1">
-                <span className="text-gray-400">•</span>
-                <span>{hoveredTask.phaseName}</span>
+      {/* PERMANENT BOTTOM STATUS BAR - Fixed height prevents layout shifts & scroll blinking */}
+      <div className="h-11 border-t border-gray-200 bg-gray-50/95 px-4 flex items-center justify-between text-xs text-gray-700 shrink-0 select-none">
+        {hoveredTask ? (
+          <>
+            <div className="flex items-center gap-2.5 min-w-0 truncate">
+              <span className="font-bold text-gray-900 text-xs truncate max-w-[260px]" title={hoveredTask.name}>
+                {hoveredTask.name}
               </span>
-            )}
-            <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-              {hoveredTask.roleCategory || hoveredTask.role}
-            </span>
-            {(() => {
-              const hAssignee = getAssigneeName(hoveredTask);
-              return hAssignee ? (
-                <span className="flex items-center gap-1 font-semibold text-gray-800 bg-white border border-gray-200 rounded-md px-2 py-0.5 shadow-2xs">
-                  <User size={12} className="text-blue-600" />
-                  <span>{hAssignee}</span>
+              {hoveredTask.phaseName && (
+                <span className="text-gray-500 text-[11px] truncate hidden sm:inline">
+                  • {hoveredTask.phaseName}
                 </span>
-              ) : (
-                <span className="text-gray-400 italic bg-white border border-gray-200 rounded-md px-2 py-0.5">
-                  Unassigned
-                </span>
-              );
-            })()}
-            <span className="text-gray-500 font-medium">
-              {CalendarEngine.formatDisplayDate(hoveredTask.startDate)} ➔{" "}
-              {CalendarEngine.formatDisplayDate(hoveredTask.endDate)}
-            </span>
+              )}
+              <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 shrink-0">
+                {hoveredTask.roleCategory || hoveredTask.role}
+              </span>
+              {(() => {
+                const hAssignee = getAssigneeName(hoveredTask);
+                return hAssignee ? (
+                  <span className="flex items-center gap-1 font-semibold text-gray-800 bg-white border border-gray-200 rounded-md px-2 py-0.5 shadow-2xs shrink-0 text-[11px]">
+                    <User size={11} className="text-blue-600" />
+                    <span className="truncate max-w-[150px]">{hAssignee}</span>
+                  </span>
+                ) : null;
+              })()}
+              <span className="text-gray-500 font-medium text-[11px] shrink-0 hidden md:inline">
+                {CalendarEngine.formatDisplayDate(hoveredTask.startDate)} ➔ {CalendarEngine.formatDisplayDate(hoveredTask.endDate)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs font-semibold shrink-0">
+              <span className="text-[11px] hidden lg:inline">
+                Duration: <strong className="text-gray-900">{hoveredTask.durationWorkingDays}d</strong> ({hoveredTask.hours}h)
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  hoveredTask.status === "Completed"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : hoveredTask.status === "In Progress"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-200 text-gray-700"
+                }`}
+              >
+                {hoveredTask.status || "Not Started"}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-between w-full text-gray-500 text-[11px]">
+            <div className="flex items-center gap-2">
+              <Sparkles size={13} className="text-blue-500 shrink-0" />
+              <span>Hover over any task or milestone to inspect dates, assignees, effort & dependencies</span>
+            </div>
+            <div className="flex items-center gap-3 text-gray-400 font-medium">
+              <span>{filteredTasks.length} Tasks visible</span>
+              <span>•</span>
+              <span>{project.totalWorkingDays || 0} Working Days</span>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-xs font-semibold shrink-0">
-            <span>
-              Duration: <strong className="text-gray-900">{hoveredTask.durationWorkingDays} Days</strong>
-            </span>
-            <span>
-              Effort: <strong className="text-gray-900">{hoveredTask.hours} Hours</strong>
-            </span>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                hoveredTask.status === "Completed"
-                  ? "bg-emerald-100 text-emerald-800"
-                  : hoveredTask.status === "In Progress"
-                  ? "bg-blue-100 text-blue-800"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-            >
-              {hoveredTask.status || "Not Started"}
-            </span>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
